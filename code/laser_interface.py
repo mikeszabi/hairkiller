@@ -6,15 +6,21 @@ Created on Mon Dec 14 16:24:15 2020
 @author: itqs
 """
 
-# dmesg | grep tty
-# sudo chmod 666 /dev/ttyUSB0 
-# Laser
-# sudo minicom -D /dev/ttyUSB0 -b 9600
 
-
+import time
 import serial
+import os
 
-class SerialInterface:
+def serial_access():
+    # dmesg | grep tty
+    os.system('sudo dmesg | grep tty')
+
+    # sudo chmod 666 /dev/ttyUSB0 
+    os.system('sudo chmod 666 /dev/ttyUSB0')
+    # Laser
+    # sudo minicom -D /dev/ttyUSB0 -b 9600
+
+class LaserInterface:
 
     def __init__(self, port='/dev/ttyUSB0'):
         self.port=port
@@ -76,4 +82,29 @@ class SerialInterface:
         self.ser.close()
         
         
+def main():
 
+    # port = '/dev/ttyUSB0'  # For Linux
+    laser = LaserInterface()
+    
+    try:
+        print("Turning laser on...")
+        laser.plaser_on()
+        time.sleep(2)
+        
+        print("Setting impulse to 50...")
+        laser.setImpulse(50)
+        time.sleep(2)
+        
+        print("Turning laser off...")
+        laser.plaser_off()
+        time.sleep(2)
+        
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    finally:
+        print("Stopping laser interface...")
+        laser.stop()
+
+if __name__ == "__main__":
+    main()

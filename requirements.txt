@@ -1,3 +1,4 @@
 pyserial
 opencv-python
 ultralytics
+mecademicpy
