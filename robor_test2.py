@@ -37,7 +37,7 @@ def simple_example():
             logger.info('Activating and homing robot...')
             initializer.reset_motion_queue(robot, activate_home=True)
             initializer.reset_vacuum_module(robot)
-
+        
             # Pause execution until robot is homed.
             robot.WaitHomed()
             logger.info('Robot is homed and ready.')

@@ -1,4 +1,5 @@
 pyserial
 opencv-python
+scikit-learn
 ultralytics
 mecademicpy
