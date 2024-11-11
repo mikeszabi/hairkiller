@@ -18,6 +18,13 @@ def np_2_imageTK(im_np):
     imgtk = ImageTk.PhotoImage(image=img)
     return imgtk
 
+# def move_robot(robot, x, y):
+#     robot.move(x, y)
+#     logging.info("Robot moved to (X: %s, Y: %s)", x, y)
+
+# READ transformation matrix - global variable?
+# ADD RobotHandler
+
 class CameraApp:
     def __init__(self, root):
         self.root = root
@@ -78,11 +85,11 @@ class CameraApp:
         self.btn_3.pack(anchor="w", pady=5)
         
         ###
-        # self.button1 = tk.Button(root, text="Button 1", command=self.button_action_1)
-        # self.button1.pack(side=tk.BOTTOM, padx=10, pady=10)
+        self.btn_4 = tk.Button(root, text="MOVE 2 CLICK", command=self.move_2_last_click)
+        self.btn_4.pack(side=tk.BOTTOM, padx=10, pady=10)
 
-        # self.button2 = tk.Button(root, text="Button 2", command=self.button_action_2)
-        # self.button2.pack(side=tk.LEFT, padx=10, pady=10)
+        self.btn_5 = tk.Button(root, text="MOVE 2 CLOSEST", command=self.move_2_closest)
+        self.btn_5.pack(side=tk.BOTTOM, padx=10, pady=10)
 
         self.update_frame()
 
@@ -116,11 +123,16 @@ class CameraApp:
         self.clicked_x, self.clicked_y = event.x, event.y
         logging.info("Clicked at (X: %s, Y: %s)", self.clicked_x, self.clicked_y)
 
-    def button_action_1(self):
-        logging.info("Button 1 pressed!")
+    def move_2_last_click(self):
+        if self.clicked_x is not None and self.clicked_y is not None:
+            # self.robor.move_to(self.clicked_x, self.clicked_y)
+            logging.info("Moved to (X: %s, Y: %s)", self.clicked_x, self.clicked_y)
+        else:
+            logging.warning("No click event recorded")
 
-    def button_action_2(self):
-        logging.info("Button 2 pressed!")
+    def move_2_closest(self):
+        # self.robor.move_to_closest()
+        logging.info("Moving to closest detection")
 
     def on_shoot(self):
         # grab the current timestamp and use it to construct the

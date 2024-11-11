@@ -7,6 +7,7 @@ import logging
 from PIL import Image, ImageTk
 from robot_handler import RobotHandler
 from cam_interface import UVCInterface
+import json
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -68,6 +69,9 @@ class CalibrateRobotApp:
 
         self.display = tk.Label(self.frame)
         self.display.pack()
+
+        self.store_button = tk.Button(self.root, text="Store Coordinates", command=self.store_coordinates)
+        self.store_button.pack()
 
         self.save_button = tk.Button(self.root, text="Save Coordinates", command=self.save_coordinates)
         self.save_button.pack()
@@ -131,11 +135,17 @@ class CalibrateRobotApp:
             self.robot_coords_label.config(text=f"Robot Coordinates: {robot_position[0:2]}")        
         self.root.after(10, self.update_frame)
 
-    def save_coordinates(self):
+    def store_coordinates(self):
         if self.image_points and self.robot_points:
             global saved_coordinates
             saved_coordinates.append((self.image_points[-1], self.robot_points[-1]))
             logging.info(f"Saved coordinates: Image {self.image_points[-1]}, Robot {self.robot_points[-1]}")
+
+    def save_coordinates(self):
+        if saved_coordinates:
+            with open("saved_coordinates.json", "w") as f:
+                json.dump(saved_coordinates, f)
+            logging.info("Coordinates saved to saved_coordinates.json")
 
     def move_robot_left(self):
         self.robot.handle_errors(None)
