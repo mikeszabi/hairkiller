@@ -14,10 +14,15 @@ import matplotlib.pyplot as plt
 
 def detect_laser_dot(image):
     """Detect the red laser dot in the image and return its coordinates."""
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    lower_red = np.array([0, 100, 100])
-    upper_red = np.array([10, 255, 255])
-    mask = cv2.inRange(hsv, lower_red, upper_red)
+    # Define the range for the red color in BGR
+    lower_red = np.array([0, 25, 100])
+    upper_red = np.array([10, 100, 255])
+    
+    # Convert image to HSV color space
+    hsv_image = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
+    
+    # Create a mask for the red color
+    mask = cv2.inRange(hsv_image, lower_red, upper_red)
     
     # Find contours of the laser dot
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)

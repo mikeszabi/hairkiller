@@ -1,0 +1,57 @@
+import numpy as np
+import cv2
+
+def detect_laser_dot(image, drawing=True):
+    """Detect the red laser dot in the image and return its coordinates."""
+    # Define the range for the red color in BGR
+    lower_red = np.array([0, 25, 100])
+    upper_red = np.array([10, 100, 255])
+    
+    # Convert image to HSV color space
+    hsv_image = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
+    
+    # Create a mask for the red color
+    mask = cv2.inRange(hsv_image, lower_red, upper_red)
+    
+    # Find contours of the red blobs
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if drawing:
+        cv2.drawContours(image, contours, -1, (0, 100, 0), 1)
+    if contours:
+        # Get the largest contour (assuming it's the laser dot)
+        largest_contour = max(contours, key=cv2.contourArea)
+        M = cv2.moments(largest_contour)
+        if M["m00"] > 0:
+            cx = int(M["m10"] / M["m00"])
+            cy = int(M["m01"] / M["m00"])
+            
+            if drawing:
+                # Draw the largest contour
+                cv2.drawContours(image, [largest_contour], -1, (0, 255, 0), 5)
+                # Draw the center of the laser dot
+                cv2.circle(image, (cx, cy), 5, (255, 0, 0), -1)
+            
+            return (cx, cy)
+    return None
+
+def main():
+    cap = cv2.VideoCapture(2)
+    
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) # Convert to RGB
+        laser_dot = detect_laser_dot(frame)
+        if laser_dot:
+            print("Laser dot at", laser_dot)
+        
+        cv2.imshow("Laser dot detection", cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+    
+    cap.release()
+    cv2.destroyAllWindows()
+
+if __name__ == "__main__":
+    main()
