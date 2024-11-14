@@ -58,6 +58,13 @@ class ObjectDetector:
             x1, y1, x2, y2, _, _ = box
             center = (x1 + x2) / 2, (y1 + y2) / 2
             return center
+        
+        def get_box_centers(self, boxes):
+            centers = []
+            for box in boxes:
+                center = self.calculate_box_center(box)
+                centers.append(center)
+            return centers
  
             
         def draw_boxes(self, image, boxes):

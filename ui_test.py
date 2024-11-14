@@ -4,14 +4,24 @@ import cv2
 import tkinter as tk
 from PIL import Image, ImageTk
 import logging
+import random
+import math
+import json
+import numpy as np
 
 from cam_interface import UVCInterface
 from hair_detection import ObjectDetector
 from laser_interface import LaserInterface
+from robot_handler import RobotHandler
+from calibrate_robot import compute_transformation, read_transformation_from_file, apply_transformation
+
 
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+saved_coordinates=[]
+
 
 def np_2_imageTK(im_np):
     img = Image.fromarray(im_np)
@@ -25,9 +35,55 @@ def np_2_imageTK(im_np):
 # READ transformation matrix - global variable?
 # ADD RobotHandler
 
+def detect_laser_dot(image,drawing=True):
+    """Detect the red laser dot in the image and return its coordinates."""
+    # Define the range for the red color in BGR
+    lower_red = np.array([0, 25, 100])
+    upper_red = np.array([10, 100, 255])
+    
+    # Convert image to HSV color space
+    hsv_image = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
+    
+    # Create a mask for the red color
+    mask = cv2.inRange(hsv_image, lower_red, upper_red)
+    # Find contours of the laser dot
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    cv2.drawContours(image, contours, -1, (0, 100, 0), 1)
+    if contours:
+        # Get the largest contour (assuming it's the laser dot)
+        largest_contour = max(contours, key=cv2.contourArea)
+        M = cv2.moments(largest_contour)
+        if M["m00"] > 0:
+            cx = int(M["m10"] / M["m00"])
+            cy = int(M["m01"] / M["m00"])
+            
+            # Draw the largest contour
+            cv2.drawContours(image, [largest_contour], -1, (0, 255, 0), 5)
+            # Draw the center of the laser dot
+            cv2.circle(image, (cx, cy), 5, (255, 0, 0), -1)
+            
+            return (cx, cy)
+    return None
+
+def generate_random_coordinates(center, radius, n):
+        coordinates = []
+        for _ in range(n):
+            angle = random.uniform(0, 2 * math.pi)
+            r = radius * math.sqrt(random.uniform(0, 1))
+            x = center[0] + r * math.cos(angle)
+            y = center[1] + r * math.sin(angle)
+            coordinates.append((x, y))
+        return coordinates
+
 class CameraApp:
     def __init__(self, root):
         self.root = root
+
+        self.image_points = []
+        self.robot_points = []
+        self.T = None
+
+
         self.root.title("Interactive Camera App with Buttons and Coordinates")
 
         self.uvc_interface = UVCInterface()
@@ -37,11 +93,18 @@ class CameraApp:
 
         self.laser = LaserInterface()
 
+        self.robot = RobotHandler()
+
+        # self.T = read_transformation_from_file(filename='transformation_matrix.txt')
+
+        ######## UI Elements ########
         self.clicked_x, self.clicked_y = None, None
         self.isDetectionOn=tk.IntVar()
         self.isLaserPointer=tk.IntVar()
         self.laser_dim=1
 
+        self.detection_boxes = []
+        self_detection_centers = []
 
         self.canvas = tk.Canvas(root, width=1024, height=768)
         self.scroll_x = tk.Scrollbar(root, orient="horizontal", command=self.canvas.xview)
@@ -83,13 +146,48 @@ class CameraApp:
 
         self.btn_3 = tk.Button(self.laser_panel, text="Shoot Laser", command=self.on_shoot)
         self.btn_3.pack(anchor="w", pady=5)
-        
-        ###
-        self.btn_4 = tk.Button(root, text="MOVE 2 CLICK", command=self.move_2_last_click)
-        self.btn_4.pack(side=tk.BOTTOM, padx=10, pady=10)
 
-        self.btn_5 = tk.Button(root, text="MOVE 2 CLOSEST", command=self.move_2_closest)
-        self.btn_5.pack(side=tk.BOTTOM, padx=10, pady=10)
+        ### Calibration Panel
+        self.calibration_panel = tk.LabelFrame(self.root, text="Calibration Panel", padx=10, pady=10)
+        self.calibration_panel.pack(side=tk.TOP, fill="x", padx=10, pady=10)
+
+
+        self.calib_button = tk.Button(self.calibration_panel, text="Auto Calibrate", command=self.calibrate_robot)
+        self.calib_button.pack(anchor="w", pady=5)
+
+
+        ### Robot Panel
+
+        self.robot_panel = tk.LabelFrame(self.root, text="Robot Panel", padx=10, pady=10)
+        self.robot_panel.pack(side=tk.TOP, fill="x", padx=10, pady=10)
+
+        self.move_up_button = tk.Button(self.robot_panel, text="Move Up", command=self.move_robot_up)
+        self.move_up_button.grid(row=0, column=1, padx=5, pady=5)
+
+        self.move_left_button = tk.Button(self.robot_panel, text="Move Left", command=self.move_robot_left)
+        self.move_left_button.grid(row=1, column=0, padx=5, pady=5)
+
+        self.move_right_button = tk.Button(self.robot_panel, text="Move Right", command=self.move_robot_right)
+        self.move_right_button.grid(row=1, column=2, padx=5, pady=5)
+        
+        self.move_down_button = tk.Button(self.robot_panel, text="Move Down", command=self.move_robot_down)
+        self.move_down_button.grid(row=2, column=1, padx=5, pady=5)
+
+        self.move_step = tk.DoubleVar()
+        self.move_step.set(1.0)
+        self.step_slider = tk.Scale(self.robot_panel, from_=0, to=10, resolution=0.2, orient=tk.HORIZONTAL, label="Move Step", variable=self.move_step)
+        self.step_slider.grid(row=3, column=1, padx=10, pady=10)
+        
+        self.btn_5 = tk.Button(self.robot_panel, text="MOVE 2 CLICK", command=self.move_2_last_click)
+        self.btn_5.grid(row=5, column=0, padx=10, pady=10)
+
+        self.btn_6 = tk.Button(self.robot_panel, text="MOVE 2 CLOSEST", command=self.move_2_closest)
+        self.btn_6.grid(row=5, column=2, padx=10, pady=10)
+
+        ###
+
+        self.release_button = tk.Button(self.root, text="Release", command=self.on_closing)
+        self.release_button.pack(side=tk.BOTTOM, padx=10, pady=10)
 
         self.update_frame()
 
@@ -97,6 +195,7 @@ class CameraApp:
         im_frame = self.uvc_interface.read_frame()
 
         if im_frame is not None:
+
             if self.clicked_x is not None and self.clicked_y is not None:
                 cv2.circle(im_frame, (self.clicked_x, self.clicked_y), 5, (0, 255, 0), -1)
                 cv2.putText(im_frame, f"({self.clicked_x}, {self.clicked_y})", 
@@ -104,9 +203,11 @@ class CameraApp:
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
                 
             if self.isDetectionOn.get() == 1:
-                boxes = self.detector.inference(im_frame, self.threshold_slider.get())
-                boxes = self.detector.remove_overlapping_boxes(boxes)
-                im_frame = self.detector.draw_boxes(im_frame, boxes)
+                self.detection_boxes  = self.detector.inference(im_frame, self.threshold_slider.get())
+                self.detection_boxes  = self.detector.remove_overlapping_boxes(self.detection_boxes )
+                im_frame = self.detector.draw_boxes(im_frame, self.detection_boxes)
+
+                self_detection_centers = self.detector.get_box_centers(self.detection_boxes)
             
             imgtk = np_2_imageTK(im_frame)
             
@@ -115,7 +216,8 @@ class CameraApp:
             
             self.canvas.config(scrollregion=self.canvas.bbox("all"))
         
-        self.root.after(10, self.update_frame)
+        if self.root.winfo_exists():
+            self.root.after(10, self.update_frame)
 
 
 
@@ -125,13 +227,33 @@ class CameraApp:
 
     def move_2_last_click(self):
         if self.clicked_x is not None and self.clicked_y is not None:
-            # self.robor.move_to(self.clicked_x, self.clicked_y)
-            logging.info("Moved to (X: %s, Y: %s)", self.clicked_x, self.clicked_y)
+            if self.T is None:
+                logging.warning("No transformation matrix found. Please calibrate the robot.")
+            else:
+                # self.robor.move_to(self.clicked_x, self.clicked_y)
+                #logging.info("Moved to (X: %s, Y: %s)", self.clicked_x, self.clicked_y)
+                image_coords = (self.clicked_x, self.clicked_y)
+                robot_coords = apply_transformation(self.T,image_coords)
+                x,y,z,rx,ry,rz = self.robot.get_position()
+                self.robot.move_2_pos(robot_coords[0], robot_coords[1], z, rx, ry, rz)
+                logging.info("Moved Robot to (X: %s, Y: %s)", robot_coords[0], robot_coords[1])
         else:
             logging.warning("No click event recorded")
 
     def move_2_closest(self):
         # self.robor.move_to_closest()
+        if self.detection_boxes:
+            closest_box = min(self.detection_boxes, key=lambda box: math.hypot(box[0] - self.clicked_x, box[1] - self.clicked_y))
+            closest_center = self.detector.get_box_centers([closest_box])[0]
+            if self.T is None:
+                logging.warning("No transformation matrix found. Please calibrate the robot.")
+            else:
+                robot_coords = apply_transformation(self.T, closest_center)
+                x, y, z, rx, ry, rz = self.robot.get_position()
+                self.robot.move_2_pos(robot_coords[0], robot_coords[1], z, rx, ry, rz)
+                logging.info("Moved Robot to closest detection at (X: %s, Y: %s)", robot_coords[0], robot_coords[1])
+        else:
+            logging.warning("No detections found")
         logging.info("Moving to closest detection")
 
     def on_shoot(self):
@@ -150,16 +272,78 @@ class CameraApp:
         laser_dim=self.laser_slider.get()
         print(laser_dim)
         self.laser.setImpulse(value=laser_dim)
-        
+
+    def calibrate_robot(self):
+
+        saved_coordinates=[]
+        # Example usage
+        x, y, z, rx, ry, rz = self.robot.get_position() # Get current (x, y) position of the robot
+        current_position = (x,y)  # Get current (x, y) position of the robot
+        radius = 5  # Define the radius
+        n = 10  # Number of random coordinates to generate
+
+        random_coords = generate_random_coordinates(current_position, radius, n)
+        logging.info("Generated random coordinates: %s", random_coords)
+
+        for coord in random_coords:
+            self.robot.handle_errors(None)
+            self.robot.move_2_pos(coord[0], coord[1], z, rx, ry, rz)
+            logging.info("Moved Robot to (X: %s, Y: %s)", coord[0], coord[1])
+            im_frame = self.uvc_interface.read_frame()
+            if im_frame is not None:
+                laser_point = detect_laser_dot(im_frame)
+                if laser_point is not None:
+                    saved_coordinates.append((laser_point, coord))
+                    logging.info(f"Laser point: {laser_point}, Robot position: {coord}")
+
+                    imgtk = np_2_imageTK(im_frame.copy())
+                
+                    self.display.imgtk = imgtk
+                    self.display.config(image=imgtk)
+
+        if len(saved_coordinates) > 3:
+            T = compute_transformation([d[0] for d in saved_coordinates], [d[1][0:2] for d in saved_coordinates])
+            np.savetxt('transformation_matrix.txt', T)
+            logging.info("Transformation matrix saved to transformation_matrix.txt")
+            self.T = T #.reshape(2, 3)
+        with open("saved_coordinates.json", "w") as f:
+            json.dump(saved_coordinates, f)
+        logging.info("Coordinates saved to saved_coordinates.json")
+
+    def move_robot_left(self):
+        self.robot.handle_errors(None)
+        self.robot.move_rel(0, -self.move_step.get(), 0, 0, 0, 0)
+        logging.info("Moved robot left")
+
+    def move_robot_right(self):
+        self.robot.handle_errors(None)
+        self.robot.move_rel(0, self.move_step.get(), 0, 0, 0, 0)
+        logging.info("Moved robot right")
+
+    def move_robot_up(self):
+        self.robot.handle_errors(None)
+        self.robot.move_rel(-self.move_step.get(), 0, 0, 0, 0, 0)
+        logging.info("Moved robot up")
+
+    def move_robot_down(self):
+        self.robot.handle_errors(None)
+        self.robot.move_rel(self.move_step.get(), 0, 0, 0, 0, 0)
+        logging.info("Moved robot down")
+
     def release(self):
+        self.uvc_interface.release()
+        self.robot.deactivate()
+        self.robot.disconnect()
         self.uvc_interface.release()
         cv2.destroyAllWindows()
         logging.info("Released camera and destroyed all windows")
+        logging.info("Released resources")
 
     def on_closing(self):
         logging.info("Application is closing")
         self.release()
         self.root.destroy()
+        self.root.quit()
 
 def main():
     root = tk.Tk()
