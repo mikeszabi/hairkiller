@@ -7,27 +7,11 @@ Created on Sat Dec 12 21:47:11 2020
 import sys
 import cv2
 import logging
+import threading
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# from PIL import Image, ImageTk
-# from hair_detection import ObjectDetector
-
-#LattePandas camera_resolution=2592×1944
-
-# def draw_cross(img,center, color, d):
-#     cv2.line(img,
-#(center[0] - d), (center[1] + d)),
-#              (int(center[0] - d), int(center[1] - d)), (int(center[0] + d), int(center[1] + d)),
-#              color, 1, cv2.LINE_AA, 0)
-#     cv2.line(img,
-#              (int(center[0] + d), int(center[1] - d)), (int(center[0] - d), int(center[1] + d)),
-#              color, 1, cv2.LINE_AA, 0) 
-
-# def procImage(im):
-#     edge=cv2.Canny(im.copy(),50,200)
-#     return edge
 
 def list_ports():
     """
@@ -73,33 +57,65 @@ class UVCInterface:
             raise ValueError(f"Failed to open camera at index {self.camera_index}")
         logging.info("Camera at index %s opened successfully", self.camera_index)
 
+        self.ret = False
+        self.frame = None
+        self.frame_index=0
+        self.stopped = False
+        self.lock = threading.Lock()
+
+        # Start the frame capture thread
+        self.thread = threading.Thread(target=self.update, args=())
+        self.thread.daemon = True
+        self.thread.start()
+
+    def update(self):
+        while True:
+            if self.stopped:
+                return
+
+            ret, frame = self.cap.read()
+            if ret:
+                self.frame_index+=1
+            with self.lock:
+                self.ret = ret
+                self.frame = frame
+
     def set_resolution(self, width, height):
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
         logging.info("Resolution set to %sx%s", width, height)
 
     def read_frame(self):
-        ret, frame = self.cap.read()
-        if not ret:
-            logging.error("Failed to read frame from camera at index %s", self.camera_index)
-            return None
-        logging.info("Frame read successfully from camera at index %s", self.camera_index)
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) # Convert to RGB
-        return frame
+        with self.lock:
+            frame = self.frame.copy() if self.frame is not None else None
+            if frame is None:
+                logging.error("Failed to read frame from camera at index %s", self.camera_index)
+                return None, None
+            else:
+                logging.info("Frame read successfully from camera at index %s", self.camera_index)
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) # Convert to RGB
+                return frame, self.frame_index
 
     def release(self):
+        self.stopped = True
+        self.thread.join()
         self.cap.release()
         logging.info("Camera at index %s released", self.camera_index)
 
 # Example usage
 if __name__ == "__main__":
-    try:
-        uvc = UVCInterface(camera_index=0)
-        uvc.set_resolution(640, 480)
-        frame = uvc.read_frame()
-        if frame is not None:
-            cv2.imshow("Frame", frame)
-            cv2.waitKey(0)
-        uvc.release()
-    except ValueError as e:
-        logging.error("An error occurred: %s", e)
+    uvc = UVCInterface(camera_index=0)
+    while True:
+        frame, frame_index = uvc.read_frame()
+        if frame is None:
+            print("Failed to capture frame")
+            continue
+
+        # Process the frame (e.g., display it)
+        cv2.imshow("Frame", frame)
+        cv2.putText(frame, f"Frame index: {frame_index}", (30, 30), cv2.FONT_HERSHEY_SIMPLEX, 5, (255, 255, 255), 10)
+        logging.info("Frame index: %s", frame_index)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    uvc.release()
