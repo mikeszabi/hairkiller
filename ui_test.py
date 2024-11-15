@@ -5,15 +5,18 @@ import tkinter as tk
 from PIL import Image, ImageTk
 import logging
 import random
+import time
 import math
 import json
 import numpy as np
+import matplotlib.pyplot as plt
+
 
 from cam_interface import UVCInterface
 from hair_detection import ObjectDetector
 from laser_interface import LaserInterface
 from robot_handler import RobotHandler
-from calibrate_robot import compute_transformation, read_transformation_from_file, apply_transformation
+from calibrate_robot import save_transformation_to_file, calculate_homography, transform_to_robot_coordinates
 
 
 
@@ -38,8 +41,8 @@ def np_2_imageTK(im_np):
 def detect_laser_dot(image,drawing=True):
     """Detect the red laser dot in the image and return its coordinates."""
     # Define the range for the red color in BGR
-    lower_red = np.array([0, 25, 100])
-    upper_red = np.array([10, 100, 255])
+    lower_red = np.array([0, 10, 150])
+    upper_red = np.array([20, 100, 255])
     
     # Convert image to HSV color space
     hsv_image = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
@@ -58,7 +61,7 @@ def detect_laser_dot(image,drawing=True):
             cy = int(M["m01"] / M["m00"])
             
             # Draw the largest contour
-            cv2.drawContours(image, [largest_contour], -1, (0, 255, 0), 5)
+            cv2.drawContours(image, [largest_contour], -1, (255, 0, 0), 5)
             # Draw the center of the laser dot
             cv2.circle(image, (cx, cy), 5, (255, 0, 0), -1)
             
@@ -78,10 +81,11 @@ def generate_random_coordinates(center, radius, n):
 class CameraApp:
     def __init__(self, root):
         self.root = root
+        self.update_frame_running = True
 
         self.image_points = []
         self.robot_points = []
-        self.T = None
+        self.H = None
 
 
         self.root.title("Interactive Camera App with Buttons and Coordinates")
@@ -216,10 +220,68 @@ class CameraApp:
             
             self.canvas.config(scrollregion=self.canvas.bbox("all"))
         
-        if self.root.winfo_exists():
+        if self.update_frame_running:
             self.root.after(10, self.update_frame)
 
+    def calibrate_robot(self):
 
+        self.update_frame_running = False
+        saved_coordinates=[]
+        # Example usage
+        x, y, z, rx, ry, rz = self.robot.get_position() # Get current (x, y) position of the robot
+        current_position = (x,y)  # Get current (x, y) position of the robot
+        radius = 10  # Define the radius
+        n = 6  # Number of random coordinates to generate
+
+        random_coords = generate_random_coordinates(current_position, radius, n)
+        logging.info("Generated random coordinates: %s", random_coords)
+
+        fig, ax = plt.subplots()
+        for i, coord in enumerate(random_coords):
+            ax.plot(coord[0], coord[1], 'bo')  # Blue dot for random coordinates
+            ax.text(coord[0], coord[1], f"{i}", color='black', fontsize=10)
+        plt.pause(0.01)
+
+        for robot_coord in random_coords:
+            self.robot.handle_errors(None)
+            self.robot.move_2_pos(robot_coord[0], robot_coord[1], z, rx, ry, rz)
+            logging.info("Moved Robot to (X: %s, Y: %s)", robot_coord[0], robot_coord[1])
+            time.sleep(10)
+            im_frame = self.uvc_interface.read_frame()
+            if im_frame is not None:
+                laser_point = detect_laser_dot(im_frame)
+                if laser_point is not None:
+                    saved_coordinates.append((laser_point, robot_coord))
+                    logging.info(f"Laser point: {laser_point}, Robot position: {robot_coord}")
+
+                    #imgtk = np_2_imageTK(im_frame.copy())
+                
+                    # self.display.imgtk = imgtk
+                    # self.display.config(image=imgtk)
+                    # self.canvas.config(scrollregion=self.canvas.bbox("all"))
+
+                    # Plot the detections and detected coordinates
+                    fig, ax = plt.subplots()
+                    plt.imshow(im_frame)
+
+                    # Plot the laser points
+                    plt.plot(laser_point[0], laser_point[1], 'ro')  # Red dot for laser points
+                    plt.text(laser_point[0], laser_point[1], f"({robot_coord[0]:.2f}, {robot_coord[1]:.2f})", color='white', fontsize=8)
+
+                    plt.pause(0.001)
+
+        if len(saved_coordinates) > 5:
+            self.H  = calculate_homography([d[0] for d in saved_coordinates], [d[1][0:2] for d in saved_coordinates])
+            save_transformation_to_file(self.H)
+            logging.info("Transformation matrix saved to transformation_matrix.txt")
+            with open("saved_coordinates.json", "w") as f:
+                json.dump(saved_coordinates, f)
+            logging.info("Coordinates saved to saved_coordinates.json")
+        else:
+            logging.error("Not enough coordinates to compute transformation matrix. Please try again.")
+
+        self.update_frame_running = True
+        self.root.after(10, self.update_frame)
 
     def click_event(self, event):
         self.clicked_x, self.clicked_y = event.x, event.y
@@ -227,13 +289,13 @@ class CameraApp:
 
     def move_2_last_click(self):
         if self.clicked_x is not None and self.clicked_y is not None:
-            if self.T is None:
+            if self.H is None:
                 logging.warning("No transformation matrix found. Please calibrate the robot.")
             else:
                 # self.robor.move_to(self.clicked_x, self.clicked_y)
                 #logging.info("Moved to (X: %s, Y: %s)", self.clicked_x, self.clicked_y)
                 image_coords = (self.clicked_x, self.clicked_y)
-                robot_coords = apply_transformation(self.T,image_coords)
+                robot_coords = transform_to_robot_coordinates(image_coords,self.H)
                 x,y,z,rx,ry,rz = self.robot.get_position()
                 self.robot.move_2_pos(robot_coords[0], robot_coords[1], z, rx, ry, rz)
                 logging.info("Moved Robot to (X: %s, Y: %s)", robot_coords[0], robot_coords[1])
@@ -248,7 +310,7 @@ class CameraApp:
             if self.T is None:
                 logging.warning("No transformation matrix found. Please calibrate the robot.")
             else:
-                robot_coords = apply_transformation(self.T, closest_center)
+                robot_coords = transform_to_robot_coordinates(closest_center,self.H)
                 x, y, z, rx, ry, rz = self.robot.get_position()
                 self.robot.move_2_pos(robot_coords[0], robot_coords[1], z, rx, ry, rz)
                 logging.info("Moved Robot to closest detection at (X: %s, Y: %s)", robot_coords[0], robot_coords[1])
@@ -273,42 +335,6 @@ class CameraApp:
         print(laser_dim)
         self.laser.setImpulse(value=laser_dim)
 
-    def calibrate_robot(self):
-
-        saved_coordinates=[]
-        # Example usage
-        x, y, z, rx, ry, rz = self.robot.get_position() # Get current (x, y) position of the robot
-        current_position = (x,y)  # Get current (x, y) position of the robot
-        radius = 5  # Define the radius
-        n = 10  # Number of random coordinates to generate
-
-        random_coords = generate_random_coordinates(current_position, radius, n)
-        logging.info("Generated random coordinates: %s", random_coords)
-
-        for coord in random_coords:
-            self.robot.handle_errors(None)
-            self.robot.move_2_pos(coord[0], coord[1], z, rx, ry, rz)
-            logging.info("Moved Robot to (X: %s, Y: %s)", coord[0], coord[1])
-            im_frame = self.uvc_interface.read_frame()
-            if im_frame is not None:
-                laser_point = detect_laser_dot(im_frame)
-                if laser_point is not None:
-                    saved_coordinates.append((laser_point, coord))
-                    logging.info(f"Laser point: {laser_point}, Robot position: {coord}")
-
-                    imgtk = np_2_imageTK(im_frame.copy())
-                
-                    self.display.imgtk = imgtk
-                    self.display.config(image=imgtk)
-
-        if len(saved_coordinates) > 3:
-            T = compute_transformation([d[0] for d in saved_coordinates], [d[1][0:2] for d in saved_coordinates])
-            np.savetxt('transformation_matrix.txt', T)
-            logging.info("Transformation matrix saved to transformation_matrix.txt")
-            self.T = T #.reshape(2, 3)
-        with open("saved_coordinates.json", "w") as f:
-            json.dump(saved_coordinates, f)
-        logging.info("Coordinates saved to saved_coordinates.json")
 
     def move_robot_left(self):
         self.robot.handle_errors(None)
@@ -333,9 +359,9 @@ class CameraApp:
     def release(self):
         self.uvc_interface.release()
         self.robot.deactivate()
-        self.robot.disconnect()
-        self.uvc_interface.release()
+        self.robot.disconnet()
         cv2.destroyAllWindows()
+        self.update_frame_running = False
         logging.info("Released camera and destroyed all windows")
         logging.info("Released resources")
 
