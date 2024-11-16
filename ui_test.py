@@ -85,6 +85,8 @@ class CameraApp:
 
         self.image_points = []
         self.robot_points = []
+        self.laser_point = None
+        self.im_frame = None
         self.H = None
         self.calibrate_on=False
         self.store_on=False
@@ -138,7 +140,7 @@ class CameraApp:
         self.calibration_panel.pack(side=tk.TOP, fill="x", padx=10, pady=10)
 
 
-        self.calib_button = tk.Button(self.calibration_panel, text="Calibrate", command=self.calibrate_robot)
+        self.calib_button = tk.Checkbutton(self.calibration_panel, text="Calibrate", command=self.calibrate_robot)
         self.calib_button.pack(anchor="w", pady=5)
 
         self.rmove_button = tk.Button(self.calibration_panel, text="Random move", command=self.random_move)
@@ -189,11 +191,14 @@ class CameraApp:
         self.btn_5 = tk.Button(self.robot_panel, text="MOVE 2 CLICK", command=self.move_2_last_click)
         self.btn_5.grid(row=5, column=0, padx=10, pady=10)
 
-        self.btn_6 = tk.Button(self.robot_panel, text="MOVE 2 CLOSEST", command=self.move_2_closest)
-        self.btn_6.grid(row=5, column=1, padx=10, pady=10)
+        # self.btn_6 = tk.Button(self.robot_panel, text="MOVE 2 CLOSEST", command=self.move_2_closest)
+        # self.btn_6.grid(row=5, column=1, padx=10, pady=10)
 
-        self.btn_7 = tk.Button(self.robot_panel, text="MVISIT ALL", command=self.visit_all)
+        self.btn_7 = tk.Button(self.robot_panel, text="VISIT ALL", command=self.visit_all)
         self.btn_7.grid(row=5, column=2, padx=10, pady=10)
+
+        self.btn_8 = tk.Button(self.robot_panel, text="VISIT ALL AND SHOOT", command=self.visit_all_and_shoot, bg="red")
+        self.btn_8.grid(row=6, column=1, padx=10, pady=10)
 
         ### Laser Panel
         self.laser_panel = tk.LabelFrame(self.root, text="Laser Settings", padx=10, pady=10)
@@ -217,14 +222,14 @@ class CameraApp:
         self.update_frame()
 
     def update_frame(self):
-        im_frame, frame_index = self.uvc_interface.read_frame()
+        self.im_frame, frame_index = self.uvc_interface.read_frame()
 
-        if im_frame is not None:
+        if self.im_frame is not None:
 
             logging.info("Frame %s read successfully", frame_index)
 
             if self.calibrate_on:
-                laser_point = detect_laser_dot(im_frame)
+                self.laser_point = detect_laser_dot(self.im_frame)
                 if self.move_random:
                     x, y, z, rx, ry, rz = self.calib_position
                     random_coords = generate_random_coordinates(self.calib_position, self.radius, 1)
@@ -234,27 +239,27 @@ class CameraApp:
                     logging.info("Moved Robot to (X: %s, Y: %s)", next_coord[0], next_coord[1])
                     self.move_random=False
                 if self.store_on:
-                    if laser_point is not None:
+                    if self.laser_point is not None:
                         x, y, z, rx, ry, rz = self.robot.get_position()
-                        self.saved_coordinates.append((laser_point, (x,y)))
+                        self.saved_coordinates.append((self.laser_point, (x,y)))
                         self.update_coordinates_label()
-                        logging.info(f"Laser point: {laser_point}, Robot position: {(x,y)}")
+                        logging.info(f"Laser point: {self.laser_point}, Robot position: {(x,y)}")
                     self.store_on=False
 
             if self.clicked_x is not None and self.clicked_y is not None:
-                cv2.circle(im_frame, (self.clicked_x, self.clicked_y), 5, (0, 255, 0), -1)
-                cv2.putText(im_frame, f"({self.clicked_x}, {self.clicked_y})", 
+                cv2.circle(self.im_frame, (self.clicked_x, self.clicked_y), 5, (0, 255, 0), -1)
+                cv2.putText(self.im_frame, f"({self.clicked_x}, {self.clicked_y})", 
                             (self.clicked_x + 10, self.clicked_y - 10), 
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
                 
             if self.isDetectionOn.get() == 1:
-                self.detection_boxes  = self.detector.inference(im_frame, self.threshold_slider.get())
+                self.detection_boxes  = self.detector.inference(self.im_frame, self.threshold_slider.get())
                 self.detection_boxes  = self.detector.remove_overlapping_boxes(self.detection_boxes )
-                im_frame = self.detector.draw_boxes(im_frame, self.detection_boxes)
+                self.im_frame = self.detector.draw_boxes(self.im_frame, self.detection_boxes)
 
                 self_detection_centers = self.detector.get_box_centers(self.detection_boxes)
             
-            imgtk = np_2_imageTK(im_frame)
+            imgtk = np_2_imageTK(self.im_frame)
             
             self.display.imgtk = imgtk
             self.display.config(image=imgtk)
@@ -266,10 +271,12 @@ class CameraApp:
 
     def calibrate_robot(self):
 
-        self.calibrate_on=True
-        self.move_on=True
-        self.saved_coordinates=[]
-        self.calib_position = self.robot.get_position() # Get current (x, y) position of the robot
+        if not self.calibrate_on:
+            self.saved_coordinates=[]
+            self.calib_position = self.robot.get_position() # Get current (x, y) position of the robot
+            self.calibrate_on = True
+        else:
+            self.calibrate_on = False
 
     def store_coordinates(self):
         self.store_on=True
@@ -278,7 +285,6 @@ class CameraApp:
         self.move_random=True
 
     def save_coordinates(self):
-        self.calibrate_on=False
         if len(self.saved_coordinates) > 5:
             self.H  = calculate_homography([d[0] for d in self.saved_coordinates], [d[1][0:2] for d in self.saved_coordinates])
             save_transformation_to_file(self.H)
@@ -286,8 +292,8 @@ class CameraApp:
             with open("saved_coordinates.json", "w") as f:
                 json.dump(self.saved_coordinates, f)
             logging.info("Coordinates saved to saved_coordinates.json")
-        self.saved_coordinates=[]
-        self.update_coordinates_label()
+        # self.saved_coordinates=[]
+        # self.update_coordinates_label()
     
     def update_coordinates_label(self):
         self.coordinates_label.config(text=f"Stored Coordinates: {len(self.saved_coordinates)}")
@@ -312,17 +318,21 @@ class CameraApp:
         else:
             logging.warning("No click event recorded")
 
-    def move_2_closest(self):
-        if self.detection_boxes is not None:
-            closest_box = min(self.detection_boxes, key=lambda box: math.hypot(box[0] - self.clicked_x, box[1] - self.clicked_y))
-            closest_center = self.detector.get_box_centers([closest_box])[0]
-            robot_coords = transform_to_robot_coordinates(closest_center,self.H)
-            x,y,z,rx,ry,rz = self.robot.get_position()
-            self.robot.move_2_pos(robot_coords[0], robot_coords[1], z, rx, ry, rz)
-            logging.info("Moved Robot to (X: %s, Y: %s)", robot_coords[0], robot_coords[1])
-        else:
-            logging.warning("No detections found")
-        logging.info("Moving to closest detection")
+    # def move_2_closest(self):
+
+    #     if self.im_frame is not None:
+    #         if self.detection_boxes is not None:
+    #             centers = self.detector.get_box_centers(self.detection_boxes)
+    #             if self.laser_point is not None:
+    #                 closest_center = min(centers, key=lambda center: math.hypot(center[0] - self.laser_point[0], center[1] - self.laser_point[1]))
+    #                 robot_coords = transform_to_robot_coordinates(closest_center,self.H)
+    #                 x,y,z,rx,ry,rz = self.robot.get_position()
+    #                 self.robot.move_2_pos(robot_coords[0], robot_coords[1], z, rx, ry, rz)
+    #                 logging.info("Moved Robot to (X: %s, Y: %s)", robot_coords[0], robot_coords[1])
+    #             else:
+    #                 logging.warning("No laser point detected")
+    #         else:
+    #             logging.warning("No detections found")
 
     def visit_all(self):
         if self.detection_boxes is not None:
@@ -332,6 +342,19 @@ class CameraApp:
                 x,y,z,rx,ry,rz = self.robot.get_position()
                 self.robot.move_2_pos(robot_coords[0], robot_coords[1], z, rx, ry, rz)
                 logging.info("Moved Robot to (X: %s, Y: %s)", robot_coords[0], robot_coords[1])
+        else:
+            logging.warning("No detections found")
+
+    def visit_all_and_shoot(self):
+        if self.detection_boxes is not None:
+            for box in self.detection_boxes:
+                center = self.detector.get_box_centers([box])[0]
+                robot_coords = transform_to_robot_coordinates(center,self.H)
+                x,y,z,rx,ry,rz = self.robot.get_position()
+                self.robot.move_2_pos(robot_coords[0], robot_coords[1], z, rx, ry, rz)
+                logging.info("Moved Robot to (X: %s, Y: %s)", robot_coords[0], robot_coords[1])
+                time.sleep(1)
+                self.laser.shoot()
         else:
             logging.warning("No detections found")
 
