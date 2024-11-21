@@ -2,4 +2,5 @@ pyserial
 opencv-python
 scikit-learn
 ultralytics
+torch
 mecademicpy

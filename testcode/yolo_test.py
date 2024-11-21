@@ -1,11 +1,25 @@
+import torch
 from ultralytics import YOLO 
+import cv2
+
+# Check device
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
 
 # Load the model and set device to CPU
-model = YOLO("best.pt")  # Replace with the path to your YOLOv8 model
-model.to("cpu")  # Ensure the model is running on CPU
 
-# Run inference on an image
-results = model("hair_test.png",conf=0.05)  # Replace with the path to your image
+device="cuda"
+model_path = r"./model/follicle_v8.pt"
+model = YOLO(model_path)
+model.to(device)
+
+image_path = r"./images/hair_test.png"
+image_path = r"/home/mike/Data/hair/WIN_20241118_20_46_26_Pro.jpg"
+im = cv2.imread(image_path)
+im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
+
+results = model(im, device=device, conf=0.05)  # Inference using GPU
+
 
 # Display results or process further as needed
 import matplotlib.pyplot as plt
@@ -13,7 +27,6 @@ import matplotlib.patches as patches
 import numpy as np
 from PIL import Image
 # Load the original image
-image_path = "hair_test.png"
 image = Image.open(image_path)
 image_np = np.array(image)
 

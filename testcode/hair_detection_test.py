@@ -4,7 +4,7 @@ sys.path.append(r'./code')
 import cv2
 from hair_detection import ObjectDetector
 
-model_path = r"./model/best.pt"
+model_path = r"./model/follicle_v9.pt"
 # Create an object detector
 detector = ObjectDetector(model_path)
 
@@ -17,6 +17,8 @@ boxes = detector.inference(image)
 boxes = detector.remove_overlapping_boxes(boxes)
 # Draw bounding boxes on the image
 image_with_boxes = detector.draw_boxes(image.copy(), boxes)
+
+
 
 # Display the image with bounding boxes
 cv2.imshow('Object Detection', image_with_boxes)
