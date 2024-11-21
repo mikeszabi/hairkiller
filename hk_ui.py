@@ -100,7 +100,7 @@ class CameraApp:
 
         self.uvc_interface = UVCInterface()
 
-        model_path = r"./model/best.pt"
+        model_path = r"./model/follicle_v9.pt"
         self.detector = ObjectDetector(model_path)
 
         self.laser = LaserInterface()
