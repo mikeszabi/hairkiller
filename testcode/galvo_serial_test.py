@@ -7,10 +7,11 @@ Created on Mon Feb 20 11:01:16 2023
 """
 # sudo dmesg | grep tty
 # ls -l /dev/serial/by-id/
-# laser : usb-FTDI_Chipi-X_FT0DI7VI-if00-port0 -> ../../ttyUSB1
+# laser : usb-FTDI_Chipi-X_FT0DI7VI-if00-port0 
 # galvo : usb-FTDI_USB__-__Serial-if00-port0
 
 # sudo chown $USER ttyUSB0
+# sudo chown $USER ttyUSB1
 
 import serial
 
@@ -19,7 +20,9 @@ STX = 2
 ETX = 3
 
 # Initialize serial port
-ser = serial.Serial('/dev/ttyUSB0', baudrate=115200, timeout=1)
+ser = serial.Serial('/dev/serial/by-id/usb-FTDI_USB__-__Serial-if00-port0', baudrate=115200, timeout=1)
+
+#ser = serial.Serial('/dev/ttyUSB0', baudrate=115200, timeout=1)
 ser.close()
 ser.open()
 print(ser.isOpen())
@@ -49,8 +52,8 @@ def sendcmd(command, data):
     ser.write(buf)
 
 # Example data initialization
-Galvo1 = 1800  # Example value, set as needed
-Galvo2 = 1800  # Example value, set as needed
+Galvo1 = 1750  # Example value, set as needed
+Galvo2 = 1700  # Example value, set as needed
 
 data = [
     Galvo1 & 0xff,  # Lower 8 bits
