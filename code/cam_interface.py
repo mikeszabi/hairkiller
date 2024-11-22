@@ -44,13 +44,13 @@ def list_ports():
 
 
 class UVCInterface:
-    def __init__(self, camera_index=0):
+    def __init__(self, camera_index=1):
 
         _,working_ports,_ = list_ports()
         if len(working_ports)<2:
             logging.error("No working camera ports found.")
             raise ValueError("No working camera ports found.")
-        self.camera_index = working_ports[1] # assuming the first working port is the built-in camera
+        self.camera_index = working_ports[camera_index] # assuming the first working port is the built-in camera
         self.cap = cv2.VideoCapture(self.camera_index)
         if not self.cap.isOpened():
             logging.error("Failed to open camera at index %s", self.camera_index)
