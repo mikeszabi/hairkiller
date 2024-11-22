@@ -33,27 +33,27 @@ def sendcmd(command, data):
     :param command: The command to send.
     :param data: The data array (6 elements long).
     """
-    buf = bytearray(10)  # 8-byte buffer
+    packet = bytearray(10)  # 8-byte buffer
     chksum = command
 
-    buf[0] = STX
-    buf[1] = command
+    packet[0] = STX
+    packet[1] = command
 
     # Add data and calculate checksum
     for k in range(6):
-        buf[k + 2] = data[k]
+        packet[k + 2] = data[k]
         chksum += data[k]
 
-    buf[8] = ETX
+    packet[8] = ETX
     #buf.append(chksum & 0xFF)  # Ensure checksum is within byte range
-    buf[9] = chksum & 0xFF
+    packet[9] = chksum & 0xFF
 
     # Send to serial port
-    ser.write(buf)
+    ser.write(packet)
 
 # Example data initialization
 Galvo1 = 1750  # Example value, set as needed
-Galvo2 = 1700  # Example value, set as needed
+Galvo2 = 1600  # Example value, set as needed
 
 data = [
     Galvo1 & 0xff,  # Lower 8 bits
@@ -66,3 +66,5 @@ data = [
 
 # Send command
 sendcmd(5, data)
+
+ser.close()

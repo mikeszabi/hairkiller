@@ -25,7 +25,6 @@ class LaserInterface:
     def __init__(self, port='/dev/ttyUSB0'):
         self.port=port
         self.ser = serial.Serial(self.port)  # open serial port
-        self.ser.baudrate='9600'
         if self.ser.isOpen():
             self.ser.close()
         self.ser.open()

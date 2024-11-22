@@ -19,9 +19,8 @@ def checksum_calc(data):
         return hex(checksum % 256)
 
 
-port='/dev/ttyUSB0'
-ser = serial.Serial(port)  # open serial port
-ser.baudrate='9600'
+#port='/dev/ttyUSB0'
+ser = serial.Serial('/dev/serial/by-id/usb-FTDI_Chipi-X_FT0DI7VI-if00-port0', baudrate=9600, timeout=1)
 
 if ser.isOpen():
     ser.close()

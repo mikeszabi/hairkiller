@@ -4,8 +4,8 @@ import cv2
 def detect_laser_dot(image,drawing=True):
     """Detect the red laser dot in the image and return its coordinates."""
     # Define the range for the red color in BGR
-    lower_red = np.array([0, 10, 150])
-    upper_red = np.array([20, 100, 255])
+    lower_red = np.array([0, 0, 200])
+    upper_red = np.array([255, 10, 255])
     
     # Convert image to HSV color space
     hsv_image = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
