@@ -11,26 +11,24 @@ import time
 import serial
 import os
 
-def serial_access():
-    # dmesg | grep tty
-    os.system('sudo dmesg | grep tty')
-
-    # sudo chmod 666 /dev/ttyUSB0 
-    os.system('sudo chmod 666 /dev/ttyUSB0')
-    # Laser
-    # sudo minicom -D /dev/ttyUSB0 -b 9600
 
 class LaserInterface:
 
-    def __init__(self, port='/dev/ttyUSB0'):
-        self.port=port
-        self.ser = serial.Serial(self.port)  # open serial port
+    def __init__(self):
+
+        #self.port='/dev/ttyUSB0'
+        self.laser_impulse_time=50 #millisec
+
+        self.serial_connect()
+        print(self.ser.isOpen())
+
+    def serial_connect(self):
+        self.ser = serial.Serial('/dev/serial/by-id/usb-FTDI_Chipi-X_FT0DI7VI-if00-port0', baudrate=9600, timeout=1)
         if self.ser.isOpen():
             self.ser.close()
         self.ser.open()
-        self.laser_impulse_time=20
         print(self.ser.isOpen())
-        
+
     def shoot(self):
         
         packet = bytearray()
@@ -41,7 +39,7 @@ class LaserInterface:
         checksum = sum(packet)
         packet.append(checksum % 256)
         
-        print(packet)
+        #print(packet)
         
         self.ser.write(packet)
         
@@ -54,7 +52,7 @@ class LaserInterface:
         checksum = sum(packet)
         packet.append(checksum % 256)
         
-        print(packet)
+        #print(packet)
         
         self.ser.write(packet)
         
@@ -67,7 +65,7 @@ class LaserInterface:
          checksum = sum(packet)
          packet.append(checksum % 256)
          
-         print(packet)
+         #print(packet)
          
          self.ser.write(packet)
         
@@ -83,7 +81,6 @@ class LaserInterface:
         
 def main():
 
-    # port = '/dev/ttyUSB0'  # For Linux
     laser = LaserInterface()
     
     try:

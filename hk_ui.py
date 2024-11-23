@@ -16,7 +16,7 @@ from cam_interface import UVCInterface
 from hair_detection import ObjectDetector
 from laser_interface import LaserInterface
 from galvo_interface import GalvoInterface
-from calibrate_mover import save_transformation_to_file, calculate_homography, transform_to_mover_coordinates
+from calibrate_mover import save_transformation_to_file, read_transformation_from_file,calculate_homography, transform_to_mover_coordinates
 
 
 
@@ -89,27 +89,37 @@ class CameraApp:
         self.move_random=False
         self.saved_coordinates=[]
         self.calib_position = None
-        self.radius = 300  # Define the radius for random coordinates
 
+        self.random_mover_radius = 500  # Define the radius for random coordinates
+        self.mover_min=10
+        self.mover_max=500
+        self.mover_step=10
+
+        self.laser_min=1
+        self.laser_max=100
+        self.laser_step=1
+
+        self.detection_tsh_min=0
+        self.detection_tsh_max=0.25
+        self.detection_tsh_step=0.01
 
         self.root.title("Interactive Camera App with Buttons and Coordinates")
 
         self.uvc_interface = UVCInterface()
 
-        model_path = r"./model/follicle_v9.pt"
+        model_path = r"./model/follicle_v9_fp.pt"
         self.detector = ObjectDetector(model_path)
+
+        self.load_transformation()
 
         self.laser = LaserInterface()
 
         self.mover = GalvoInterface()
 
-        # self.T = read_transformation_from_file(filename='transformation_matrix.txt')
-
         ######## UI Elements ########
         self.clicked_x, self.clicked_y = None, None
         self.isDetectionOn=tk.IntVar()
         self.isLaserPointer=tk.IntVar()
-        self.laser_dim=1
 
         self.detection_boxes = []
         self_detection_centers = []
@@ -158,8 +168,8 @@ class CameraApp:
         self.btn_1 = tk.Checkbutton(self.detection_panel, text="Enable Detection", variable=self.isDetectionOn, onvalue=1, offvalue=0)
         self.btn_1.pack(anchor="w", pady=5)
 
-        self.threshold_slider = tk.Scale(self.detection_panel, from_=0, to=0.5, resolution=0.01, orient=tk.HORIZONTAL, label="Detection Threshold")
-        self.threshold_slider.set(0.1)  # Default value
+        self.threshold_slider = tk.Scale(self.detection_panel, from_=self.detection_tsh_min, to=self.detection_tsh_max, resolution=self.detection_tsh_step, orient=tk.HORIZONTAL, label="Detection Threshold")
+        self.threshold_slider.set(self.detection_tsh_max/2)  # Default value
         self.threshold_slider.pack(fill="x", pady=5)
 
         ### mover Panel
@@ -180,15 +190,12 @@ class CameraApp:
         self.move_down_button.grid(row=2, column=1, padx=5, pady=5)
 
         self.move_step = tk.DoubleVar()
-        self.move_step.set(1.0)
-        self.step_slider = tk.Scale(self.mover_panel, from_=0, to=100, resolution=1, orient=tk.HORIZONTAL, label="Move Step", variable=self.move_step)
+        self.move_step.set(self.mover_max/2)
+        self.step_slider = tk.Scale(self.mover_panel, from_= self.mover_min, to=self.mover_max, resolution=self.mover_step, orient=tk.HORIZONTAL, label="Move Step", variable=self.move_step)
         self.step_slider.grid(row=3, column=1, padx=10, pady=10)
         
         self.btn_5 = tk.Button(self.mover_panel, text="MOVE 2 CLICK", command=self.move_2_last_click)
         self.btn_5.grid(row=5, column=0, padx=10, pady=10)
-
-        # self.btn_6 = tk.Button(self.mover_panel, text="MOVE 2 CLOSEST", command=self.move_2_closest)
-        # self.btn_6.grid(row=5, column=1, padx=10, pady=10)
 
         self.btn_7 = tk.Button(self.mover_panel, text="VISIT ALL", command=self.visit_all)
         self.btn_7.grid(row=5, column=2, padx=10, pady=10)
@@ -200,10 +207,11 @@ class CameraApp:
         self.laser_panel = tk.LabelFrame(self.root, text="Laser Settings", padx=10, pady=10)
         self.laser_panel.pack(side=tk.TOP, fill="x", padx=10, pady=10)
 
+        self.isLaserPointer.set(1)  # Set default value to on
         self.btn_2 = tk.Checkbutton(self.laser_panel, text="Enable Laser Pointer", variable=self.isLaserPointer, onvalue=1, offvalue=0, command=self.switch_plaser)
         self.btn_2.pack(anchor="w", pady=5)
 
-        self.laser_slider = tk.Scale(self.laser_panel, from_=1, to=100, orient=tk.HORIZONTAL, label="Laser Intensity")
+        self.laser_slider = tk.Scale(self.laser_panel, from_=self.laser_min, to=self.laser_max, orient=tk.HORIZONTAL, label="Laser Intensity")
         self.laser_slider.bind("<ButtonRelease-1>", self.on_laser_update)
         self.laser_slider.pack(fill="x", pady=5)
 
@@ -228,7 +236,7 @@ class CameraApp:
                 self.laser_point = detect_laser_dot(self.im_frame)
                 if self.move_random:
                     x, y = self.calib_position
-                    random_coords = generate_random_coordinates(self.calib_position, self.radius, 1)
+                    random_coords = generate_random_coordinates(self.calib_position, self.random_mover_radius, 1)
                     next_coord = random_coords[0]
                     self.mover.move_2_pos(next_coord[0], next_coord[1])
                     logging.info("Moved mover to (X: %s, Y: %s)", next_coord[0], next_coord[1])
@@ -289,6 +297,10 @@ class CameraApp:
             logging.info("Coordinates saved to saved_coordinates.json")
         # self.saved_coordinates=[]
         # self.update_coordinates_label()
+
+    def load_transformation(self):
+        self.H = read_transformation_from_file(filename='transformation_matrix.txt')
+        logging.info("Transformation matrix loaded from transformation_matrix.txt")
     
     def update_coordinates_label(self):
         self.coordinates_label.config(text=f"Stored Coordinates: {len(self.saved_coordinates)}")
@@ -333,8 +345,9 @@ class CameraApp:
                 x,y = self.mover.get_position()
                 self.mover.move_2_pos(int(mover_coords[0]), int(mover_coords[1]))
                 logging.info("Moved mover to (X: %s, Y: %s)", mover_coords[0], mover_coords[1])
-                time.sleep(1)
+                #self.root.after(500, self.laser.shoot)
                 self.laser.shoot()
+                time.sleep(0.5)
         else:
             logging.warning("No detections found")
 
@@ -352,7 +365,7 @@ class CameraApp:
     def on_laser_update(self,event):
         # set dim
         laser_dim=self.laser_slider.get()
-        print(laser_dim)
+        logging.info("Laser intensity set to: %s", laser_dim)
         self.laser.setImpulse(value=laser_dim)
 
 
