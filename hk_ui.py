@@ -268,6 +268,8 @@ class CameraApp:
             self.display.config(image=imgtk)
             
             self.canvas.config(scrollregion=self.canvas.bbox("all"))
+            self.root.update_idletasks()
+            self.root.update()
         
         if self.update_frame_running:
             self.root.after(10, self.update_frame)
@@ -334,6 +336,20 @@ class CameraApp:
                 #x,y= self.mover.get_position()
                 self.mover.move_2_pos(int(mover_coords[0]), int(mover_coords[1]))
                 logging.info("Moved mover to (X: %s, Y: %s)", mover_coords[0], mover_coords[1])
+                time.sleep(0.5)
+
+                self.im_frame, frame_index = self.uvc_interface.read_frame()
+
+                if self.im_frame is not None:
+                    logging.info("Frame %s read successfully", frame_index)
+                    self.im_frame = self.detector.draw_boxes(self.im_frame, self.detection_boxes)
+
+                    imgtk = np_2_imageTK(self.im_frame)
+                    self.display.imgtk = imgtk
+                    self.display.config(image=imgtk)
+                    self.canvas.config(scrollregion=self.canvas.bbox("all"))
+                    self.root.update_idletasks()
+                    self.root.update()
         else:
             logging.warning("No detections found")
 
@@ -348,6 +364,19 @@ class CameraApp:
                 #self.root.after(500, self.laser.shoot)
                 self.laser.shoot()
                 time.sleep(0.5)
+
+                self.im_frame, frame_index = self.uvc_interface.read_frame()
+
+                if self.im_frame is not None:
+                    logging.info("Frame %s read successfully", frame_index)
+                    self.im_frame = self.detector.draw_boxes(self.im_frame, self.detection_boxes)
+
+                    imgtk = np_2_imageTK(self.im_frame)
+                    self.display.imgtk = imgtk
+                    self.display.config(image=imgtk)
+                    self.canvas.config(scrollregion=self.canvas.bbox("all"))
+                    self.root.update_idletasks()
+                    self.root.update()
         else:
             logging.warning("No detections found")
 
