@@ -238,7 +238,7 @@ class CameraApp:
                     x, y = self.calib_position
                     random_coords = generate_random_coordinates(self.calib_position, self.random_mover_radius, 1)
                     next_coord = random_coords[0]
-                    self.mover.move_2_pos(next_coord[0], next_coord[1])
+                    self.mover.move_2_pos(int(next_coord[0]), int(next_coord[1]))
                     logging.info("Moved mover to (X: %s, Y: %s)", next_coord[0], next_coord[1])
                     self.move_random=False
                 if self.store_on:
