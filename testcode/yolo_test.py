@@ -14,7 +14,6 @@ model = YOLO(model_path)
 model.to(device)
 
 image_path = r"./images/hair_test.png"
-image_path = r"/home/mike/Data/hair/WIN_20241118_20_48_15_Pro.jpg"
 im = cv2.imread(image_path)
 im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
 
