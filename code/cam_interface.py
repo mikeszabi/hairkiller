@@ -121,10 +121,10 @@ class UVCInterface:
         with self.lock:
             frame = self.frame.copy() if self.frame is not None else None
             if frame is None:
-                logging.error("Failed to read frame from camera at index %s", self.camera_index)
+                #logging.error("Failed to read frame from camera at index %s", self.camera_index)
                 return None, None
             else:
-                logging.info("Frame read successfully from camera at index %s", self.camera_index)
+                #logging.info("Frame read successfully from camera at index %s", self.camera_index)
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) # Convert to RGB
                 return frame, self.frame_index
 

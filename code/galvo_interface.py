@@ -19,7 +19,8 @@ class GalvoInterface:
 
     def __init__(self):
         #self.port='/dev/ttyUSB0'
-
+        self.x_pos_range = (0,5000)
+        self.y_pos_range = (0,5800)
         self.command=5
         self.serial_connect()
         self.current_position = (1500,1800)
@@ -39,11 +40,16 @@ class GalvoInterface:
         return self.current_position
     
     def move_2_pos(self, x, y):
+        if (x<self.x_pos_range[0] or x>self.x_pos_range[1] or y<self.y_pos_range[0] or y>self.y_pos_range[1]):
+            raise ValueError('The position is out of range')
+            return None
         try:
             self._move(x,y)
-            self.current_position = (x,y)
         except Exception as e:
             print(e)
+            return None
+        self.current_position = (x,y)
+        return self.current_position
 
     def _sendcmd(self,command, data):
         """
@@ -101,7 +107,6 @@ def main():
     galvo.move_2_pos(1500,1800)
 
     print(galvo.get_position())
-
 
     galvo.stop()
 

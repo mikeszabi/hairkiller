@@ -30,7 +30,7 @@ print(ser.isOpen())
 
 
 # shoot
-laser_impulse_time=50 #millisec
+laser_impulse_time=30 #millisec
 
 packet = bytearray()
 packet.append(2)

@@ -39,7 +39,7 @@ class LaserInterface:
         checksum = sum(packet)
         packet.append(checksum % 256)
         
-        #print(packet)
+        print(packet)
         
         self.ser.write(packet)
         
@@ -71,7 +71,7 @@ class LaserInterface:
         
         
     def setImpulse(self,value=1):
-        value=min(value,100)
+        value=min(value,255)
         value=max(value,1)
         self.laser_impulse_time=value
         

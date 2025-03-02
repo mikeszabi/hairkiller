@@ -90,14 +90,14 @@ class CameraApp:
         self.saved_coordinates=[]
         self.calib_position = None
 
-        self.random_mover_radius = 500  # Define the radius for random coordinates
+        self.random_mover_radius = 200  # Define the radius for random coordinates
         self.mover_min=10
-        self.mover_max=500
+        self.mover_max=250
         self.mover_step=10
 
-        self.laser_min=1
-        self.laser_max=100
-        self.laser_step=1
+        self.laser_min=0
+        self.laser_max=250
+        self.laser_step=25
 
         self.detection_tsh_min=0
         self.detection_tsh_max=0.25
@@ -230,7 +230,7 @@ class CameraApp:
 
         if self.im_frame is not None:
 
-            logging.info("Frame %s read successfully", frame_index)
+            #logging.info("Frame %s read successfully", frame_index)
 
             if self.calibrate_on:
                 self.laser_point = detect_laser_dot(self.im_frame)
@@ -238,8 +238,9 @@ class CameraApp:
                     x, y = self.calib_position
                     random_coords = generate_random_coordinates(self.calib_position, self.random_mover_radius, 1)
                     next_coord = random_coords[0]
-                    self.mover.move_2_pos(int(next_coord[0]), int(next_coord[1]))
-                    logging.info("Moved mover to (X: %s, Y: %s)", next_coord[0], next_coord[1])
+                    x,y = self.mover.get_position()
+                    logging.info("Current position: (X: %s, Y: %s)", x, y)
+                    self.move_mover(int(next_coord[0]), int(next_coord[1]))
                     self.move_random=False
                 if self.store_on:
                     if self.laser_point is not None:
@@ -297,8 +298,8 @@ class CameraApp:
             with open("saved_coordinates.json", "w") as f:
                 json.dump(self.saved_coordinates, f)
             logging.info("Coordinates saved to saved_coordinates.json")
-        # self.saved_coordinates=[]
-        # self.update_coordinates_label()
+        self.saved_coordinates=[]
+        self.update_coordinates_label()
 
     def load_transformation(self):
         self.H = read_transformation_from_file(filename='transformation_matrix.txt')
@@ -317,13 +318,11 @@ class CameraApp:
             if self.H is None:
                 logging.warning("No transformation matrix found. Please calibrate the mover.")
             else:
-                # self.robor.move_to(self.clicked_x, self.clicked_y)
-                #logging.info("Moved to (X: %s, Y: %s)", self.clicked_x, self.clicked_y)
                 image_coords = (self.clicked_x, self.clicked_y)
                 mover_coords = transform_to_mover_coordinates(image_coords,self.H)
-                #x,y = self.mover.get_position()
-                self.mover.move_2_pos(int(mover_coords[0]), int(mover_coords[1]))
-                logging.info("Moved mover to (X: %s, Y: %s)", mover_coords[0], mover_coords[1])
+                x,y = self.mover.get_position()
+                logging.info("Current position: (X: %s, Y: %s)", x, y)
+                self.move_mover(int(mover_coords[0]), int(mover_coords[1]))
         else:
             logging.warning("No click event recorded")
 
@@ -333,15 +332,14 @@ class CameraApp:
             for box in self.detection_boxes:
                 center = self.detector.get_box_centers([box])[0]
                 mover_coords = transform_to_mover_coordinates(center,self.H)
-                #x,y= self.mover.get_position()
-                self.mover.move_2_pos(int(mover_coords[0]), int(mover_coords[1]))
-                logging.info("Moved mover to (X: %s, Y: %s)", mover_coords[0], mover_coords[1])
-                time.sleep(0.5)
+                
+                self.move_mover(int(mover_coords[0]), int(mover_coords[1]))
+                time.sleep(1)
 
                 self.im_frame, frame_index = self.uvc_interface.read_frame()
 
                 if self.im_frame is not None:
-                    logging.info("Frame %s read successfully", frame_index)
+                    #logging.info("Frame %s read successfully", frame_index)
                     self.im_frame = self.detector.draw_boxes(self.im_frame, self.detection_boxes)
 
                     imgtk = np_2_imageTK(self.im_frame)
@@ -358,17 +356,15 @@ class CameraApp:
             for box in self.detection_boxes:
                 center = self.detector.get_box_centers([box])[0]
                 mover_coords = transform_to_mover_coordinates(center,self.H)
-                x,y = self.mover.get_position()
-                self.mover.move_2_pos(int(mover_coords[0]), int(mover_coords[1]))
-                logging.info("Moved mover to (X: %s, Y: %s)", mover_coords[0], mover_coords[1])
-                #self.root.after(500, self.laser.shoot)
+                
+                self.move_mover(int(mover_coords[0]), int(mover_coords[1]))
+                time.sleep(1)
                 self.laser.shoot()
-                time.sleep(0.5)
 
                 self.im_frame, frame_index = self.uvc_interface.read_frame()
 
                 if self.im_frame is not None:
-                    logging.info("Frame %s read successfully", frame_index)
+                    #logging.info("Frame %s read successfully", frame_index)
                     self.im_frame = self.detector.draw_boxes(self.im_frame, self.detection_boxes)
 
                     imgtk = np_2_imageTK(self.im_frame)
@@ -395,36 +391,42 @@ class CameraApp:
         # set dim
         laser_dim=self.laser_slider.get()
         logging.info("Laser intensity set to: %s", laser_dim)
+
+
         self.laser.setImpulse(value=laser_dim)
 
-
-    def move_mover_left(self):
-        x,y = self.mover.get_position()
-        logging.info("Current position: (X: %s, Y: %s)", x, y)
-        y=y+int(self.move_step.get())
-        self.mover.move_2_pos(x, y)
-        logging.info("Moved mover left")
-
-    def move_mover_right(self):
-        x,y = self.mover.get_position()
-        logging.info("Current position: (X: %s, Y: %s)", x, y)
-        y=y-int(self.move_step.get())
-        self.mover.move_2_pos(x, y)
-        logging.info("Moved mover right")
+    def move_mover(self,x,y):
+        new_pos = self.mover.move_2_pos(x, y)
+        if new_pos is None:
+            logging.warning("The position is out of range")
+        else:
+            logging.info("New position: (X: %s, Y: %s)", new_pos[0], new_pos[1])
 
     def move_mover_up(self):
         x,y = self.mover.get_position()
         logging.info("Current position: (X: %s, Y: %s)", x, y)
-        x=x+int(self.move_step.get())
-        self.mover.move_2_pos(x, y)
-        logging.info("Moved mover up")
+        y=y+int(self.move_step.get())
+        self.move_mover(x,y)
 
     def move_mover_down(self):
         x,y = self.mover.get_position()
         logging.info("Current position: (X: %s, Y: %s)", x, y)
+        y=y-int(self.move_step.get())
+        self.move_mover(x,y)
+
+    def move_mover_left(self):
+        x,y = self.mover.get_position()
+        logging.info("Current position: (X: %s, Y: %s)", x, y)
+        x=x+int(self.move_step.get())
+        self.move_mover(x,y)
+
+
+    def move_mover_right(self):
+        x,y = self.mover.get_position()
+        logging.info("Current position: (X: %s, Y: %s)", x, y)
         x=x-int(self.move_step.get())
-        self.mover.move_2_pos(x, y)
-        logging.info("Moved mover down")
+        self.move_mover(x,y)
+
 
     def release(self):
         self.uvc_interface.release()
