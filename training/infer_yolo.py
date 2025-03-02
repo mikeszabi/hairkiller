@@ -66,11 +66,13 @@ def merge_predictions(predictions, original_shape, grid_size=(4, 3)):
 
 def main():
     # Load model
-    model_path = os.path.join('/home/mike/data/hair_follicle_train/runs/detect/train/weights', 'best.pt')
+    model_path = r"./model/follicle_exit_v11s_20250301.pt"
+
     model = YOLO(model_path)
     
     # Load image
-    image_path = '/home/mike/data/hair_raw/20250117/WIN_20250117_11_18_04_Pro.jpg'
+    image_path = r"./images/hair_test_live.jpg"
+
     image = cv2.imread(image_path)
     if image is None:
         print(f"Error: Could not load image at {image_path}")
@@ -92,9 +94,9 @@ def main():
     results = []
     with torch.no_grad():
         for tile in tiles:
-            temp_path = '/home/mike/data/hair_raw/temp.jpg'
-            cv2.imwrite(temp_path, tile)
-            result = model(temp_path, conf=0.2)[0]
+            # temp_path = '/home/mike/data/hair_raw/temp.jpg'
+            # cv2.imwrite(temp_path, tile)
+            result = model(tile, conf=0.2)[0]
             results.append(result)
     
     # Merge predictions

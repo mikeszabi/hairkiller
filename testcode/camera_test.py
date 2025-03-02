@@ -39,21 +39,22 @@ if selected_camera_index is None:
 
 cap = cv2.VideoCapture(selected_camera_index)
 
-cap = cv2.VideoCapture(2)  # Change the index if you have multiple cameras
+#cap = cv2.VideoCapture(2)  # Change the index if you have multiple cameras
 
 # Check if the camera opened successfully
 if not cap.isOpened():
     print("Error: Could not open camera.")
     exit()
 
-# Set resolution (optional)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+# # Set resolution (optional)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 2560)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1920)
 
 # Display the camera feed
 while True:
     # Capture frame-by-frame
     ret, frame = cap.read()
+    print(frame.shape)
     
     # If frame is read correctly, ret is True
     if not ret:
@@ -70,3 +71,5 @@ while True:
 # Release the capture and close the window
 cap.release()
 cv2.destroyAllWindows()
+
+cv2.imwrite('test.jpg', frame)

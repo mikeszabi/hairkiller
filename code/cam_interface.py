@@ -121,7 +121,7 @@ class UVCInterface:
         with self.lock:
             frame = self.frame.copy() if self.frame is not None else None
             if frame is None:
-                #logging.error("Failed to read frame from camera at index %s", self.camera_index)
+                logging.error("Failed to read frame from camera at index %s", self.camera_index)
                 return None, None
             else:
                 #logging.info("Frame read successfully from camera at index %s", self.camera_index)

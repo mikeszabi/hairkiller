@@ -8,12 +8,16 @@ print(f"Using device: {device}")
 
 # Load the model and set device to CPU
 
-device="cuda"
+device="cude" # "cude"
 model_path = r"./model/follicle_v9.pt"
+model_path = r"./model/follicle_exit_v11s_20250301.pt"
+
 model = YOLO(model_path)
 model.to(device)
 
 image_path = r"./images/hair_test.png"
+image_path = r"./images/hair_test_live.jpg"
+
 im = cv2.imread(image_path)
 im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
 

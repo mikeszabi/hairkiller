@@ -106,6 +106,7 @@ class CameraApp:
         self.root.title("Interactive Camera App with Buttons and Coordinates")
 
         self.uvc_interface = UVCInterface()
+        #self.uvc_interface.set_resolution(2560, 1920)
 
         model_path = r"./model/follicle_exit_v11s_20250301.pt"
         self.detector = ObjectDetector(model_path)
