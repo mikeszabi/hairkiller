@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 
 
 from cam_interface import UVCInterface
-from hair_detection import ObjectDetector
+from hair_detection import ObjectDetector, remove_overlapping_boxes, draw_boxes
 from laser_interface import LaserInterface
 from galvo_interface import GalvoInterface
 from calibrate_mover import save_transformation_to_file, read_transformation_from_file,calculate_homography, transform_to_mover_coordinates
@@ -100,14 +100,14 @@ class CameraApp:
         self.laser_step=25
 
         self.detection_tsh_min=0
-        self.detection_tsh_max=0.25
-        self.detection_tsh_step=0.01
+        self.detection_tsh_max=0.5
+        self.detection_tsh_step=0.05
 
         self.root.title("Interactive Camera App with Buttons and Coordinates")
 
         self.uvc_interface = UVCInterface()
 
-        model_path = r"./model/follicle_v9_fp.pt"
+        model_path = r"./model/follicle_exit_v11s_20250301.pt"
         self.detector = ObjectDetector(model_path)
 
         self.load_transformation()
@@ -257,9 +257,9 @@ class CameraApp:
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
                 
             if self.isDetectionOn.get() == 1:
-                self.detection_boxes  = self.detector.inference(self.im_frame, self.threshold_slider.get())
-                self.detection_boxes  = self.detector.remove_overlapping_boxes(self.detection_boxes )
-                self.im_frame = self.detector.draw_boxes(self.im_frame, self.detection_boxes)
+                self.detection_boxes  = self.detector.split_inference(self.im_frame, self.threshold_slider.get())
+                #self.detection_boxes  = remove_overlapping_boxes(self.detection_boxes )
+                self.im_frame = draw_boxes(self.im_frame, self.detection_boxes)
 
                 self_detection_centers = self.detector.get_box_centers(self.detection_boxes)
             
