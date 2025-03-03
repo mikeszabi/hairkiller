@@ -13,11 +13,10 @@ import matplotlib.pyplot as plt
 
 
 from cam_interface import UVCInterface
-from hair_detection import ObjectDetector, remove_overlapping_boxes, draw_boxes, calculate_box_center, get_box_centers
+from hair_detection import ObjectDetector
 from laser_interface import LaserInterface
 from galvo_interface import GalvoInterface
 from calibrate_mover import save_transformation_to_file, read_transformation_from_file,calculate_homography, transform_to_mover_coordinates
-import multiprocessing
 
 
 
@@ -28,8 +27,7 @@ saved_coordinates=[]
 
 
 def np_2_imageTK(im_np):
-    im_np_rgb=cv2.cvtColor(im_np, cv2.COLOR_BGR2RGB)
-    img = Image.fromarray(im_np_rgb)
+    img = Image.fromarray(im_np)
     imgtk = ImageTk.PhotoImage(image=img)
     return imgtk
 
@@ -93,25 +91,23 @@ class CameraApp:
         self.calib_position = None
 
         self.random_mover_radius = 200  # Define the radius for random coordinates
-        self.mover_min=25
+        self.mover_min=10
         self.mover_max=250
-        self.mover_step=25
+        self.mover_step=10
 
         self.laser_min=0
         self.laser_max=250
         self.laser_step=25
 
         self.detection_tsh_min=0
-        self.detection_tsh_max=0.5
-        self.detection_tsh_step=0.05
+        self.detection_tsh_max=0.25
+        self.detection_tsh_step=0.01
 
         self.root.title("Interactive Camera App with Buttons and Coordinates")
 
         self.uvc_interface = UVCInterface()
-        self.uvc_interface.set_resolution(2560, 1920)
-        self.uvc_interface.set_fps(10)
 
-        model_path = r"./model/follicle_exit_v11s_20250301.pt"
+        model_path = r"./model/follicle_v9_fp.pt"
         self.detector = ObjectDetector(model_path)
 
         self.load_transformation()
@@ -126,6 +122,7 @@ class CameraApp:
         self.isLaserPointer=tk.IntVar()
 
         self.detection_boxes = []
+        self_detection_centers = []
 
         self.canvas = tk.Canvas(root, width=1024, height=768)
         self.scroll_x = tk.Scrollbar(root, orient="horizontal", command=self.canvas.xview)
@@ -147,6 +144,7 @@ class CameraApp:
         ### Calibration Panel
         self.calibration_panel = tk.LabelFrame(self.root, text="Calibration Panel", padx=10, pady=10)
         self.calibration_panel.pack(side=tk.TOP, fill="x", padx=10, pady=10)
+
 
         self.calib_button = tk.Checkbutton(self.calibration_panel, text="Calibrate", command=self.calibrate_mover)
         self.calib_button.pack(anchor="w", pady=5)
@@ -174,7 +172,8 @@ class CameraApp:
         self.threshold_slider.set(self.detection_tsh_max/2)  # Default value
         self.threshold_slider.pack(fill="x", pady=5)
 
-        ### Mover Panel
+        ### mover Panel
+
         self.mover_panel = tk.LabelFrame(self.root, text="Mover Panel", padx=10, pady=10)
         self.mover_panel.pack(side=tk.TOP, fill="x", padx=10, pady=10)
 
@@ -258,12 +257,11 @@ class CameraApp:
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
                 
             if self.isDetectionOn.get() == 1:
-                self.detection_boxes  = self.detector.split_inference(self.im_frame, self.threshold_slider.get())
-                if len(self.detection_boxes) > 0:
-                    #self.detection_boxes  = remove_overlapping_boxes(self.detection_boxes )
-                    self.im_frame = draw_boxes(self.im_frame, self.detection_boxes)
-                else:
-                    logging.warning("No detections found")
+                self.detection_boxes  = self.detector.inference(self.im_frame, self.threshold_slider.get())
+                self.detection_boxes  = self.detector.remove_overlapping_boxes(self.detection_boxes )
+                self.im_frame = self.detector.draw_boxes(self.im_frame, self.detection_boxes)
+
+                self_detection_centers = self.detector.get_box_centers(self.detection_boxes)
             
             imgtk = np_2_imageTK(self.im_frame)
             
@@ -277,7 +275,6 @@ class CameraApp:
         if self.update_frame_running:
             self.root.after(10, self.update_frame)
 
-    ############## Mover functions ################
     def calibrate_mover(self):
 
         if not self.calibrate_on:
@@ -332,46 +329,52 @@ class CameraApp:
 
     def visit_all(self):
         if self.detection_boxes is not None:
+            for box in self.detection_boxes:
+                center = self.detector.get_box_centers([box])[0]
+                mover_coords = transform_to_mover_coordinates(center,self.H)
+                
+                self.move_mover(int(mover_coords[0]), int(mover_coords[1]))
+                time.sleep(1)
 
-            def visit_boxes(detection_boxes, H):
-                for box in detection_boxes:
-                    center = calculate_box_center(box)
-                    mover_coords = transform_to_mover_coordinates(center, H)
-                    
-                    self.move_mover(int(mover_coords[0]), int(mover_coords[1]))
+                self.im_frame, frame_index = self.uvc_interface.read_frame()
 
-                    time.sleep(1)
+                if self.im_frame is not None:
+                    #logging.info("Frame %s read successfully", frame_index)
+                    self.im_frame = self.detector.draw_boxes(self.im_frame, self.detection_boxes)
 
-            p = multiprocessing.Process(target=visit_boxes, args=(self.detection_boxes, self.H))
-            p.start()
+                    imgtk = np_2_imageTK(self.im_frame)
+                    self.display.imgtk = imgtk
+                    self.display.config(image=imgtk)
+                    self.canvas.config(scrollregion=self.canvas.bbox("all"))
+                    self.root.update_idletasks()
+                    self.root.update()
         else:
             logging.warning("No detections found")
 
     def visit_all_and_shoot(self):
-        return None
-        # if self.detection_boxes is not None:
-        #     for box in self.detection_boxes:
-        #         center = calculate_box_center(box)
-        #         mover_coords = transform_to_mover_coordinates(center,self.H)
+        if self.detection_boxes is not None:
+            for box in self.detection_boxes:
+                center = self.detector.get_box_centers([box])[0]
+                mover_coords = transform_to_mover_coordinates(center,self.H)
                 
-        #         self.move_mover(int(mover_coords[0]), int(mover_coords[1]))
-        #         time.sleep(1)
-        #         self.laser.shoot()
+                self.move_mover(int(mover_coords[0]), int(mover_coords[1]))
+                time.sleep(1)
+                self.laser.shoot()
 
-        #         self.im_frame, frame_index = self.uvc_interface.read_frame()
+                self.im_frame, frame_index = self.uvc_interface.read_frame()
 
-        #         if self.im_frame is not None:
-        #             #logging.info("Frame %s read successfully", frame_index)
-        #             self.im_frame = self.detector.draw_boxes(self.im_frame, self.detection_boxes)
+                if self.im_frame is not None:
+                    #logging.info("Frame %s read successfully", frame_index)
+                    self.im_frame = self.detector.draw_boxes(self.im_frame, self.detection_boxes)
 
-        #             imgtk = np_2_imageTK(self.im_frame)
-        #             self.display.imgtk = imgtk
-        #             self.display.config(image=imgtk)
-        #             self.canvas.config(scrollregion=self.canvas.bbox("all"))
-        #             self.root.update_idletasks()
-        #             self.root.update()
-        # else:
-        #     logging.warning("No detections found")
+                    imgtk = np_2_imageTK(self.im_frame)
+                    self.display.imgtk = imgtk
+                    self.display.config(image=imgtk)
+                    self.canvas.config(scrollregion=self.canvas.bbox("all"))
+                    self.root.update_idletasks()
+                    self.root.update()
+        else:
+            logging.warning("No detections found")
 
     def on_shoot(self):
         # grab the current timestamp and use it to construct the

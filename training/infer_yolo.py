@@ -101,7 +101,8 @@ def main():
     
     # Merge predictions
     boxes, scores, classes = merge_predictions(results, original_shape, grid_size)
-    
+    if len(boxes) >0:
+        boxes_with_scores = np.concatenate((boxes, scores[:, None], classes[:,None]), axis=1)
     # Draw predictions on original image
     for box, score, cls in zip(boxes, scores, classes):
         x1, y1, x2, y2 = map(int, box)

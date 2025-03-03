@@ -165,6 +165,8 @@ class ObjectDetector:
             
             # Merge predictions
             boxes, scores, classes = merge_predictions(results, original_shape, grid_size)
+            if len(boxes) == 0:
+                return []
             boxes_with_scores = np.concatenate((boxes, scores[:, None], classes[:,None]), axis=1)
             return boxes_with_scores
                 
