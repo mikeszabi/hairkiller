@@ -10,6 +10,7 @@ import math
 import json
 import numpy as np
 import matplotlib.pyplot as plt
+import threading
 
 
 from cam_interface import UVCInterface
@@ -26,10 +27,10 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 saved_coordinates=[]
 
-
 def np_2_imageTK(im_np):
-    im_np_rgb=cv2.cvtColor(im_np, cv2.COLOR_BGR2RGB)
+    im_np_rgb = cv2.cvtColor(im_np.copy(), cv2.COLOR_BGR2RGB)
     img = Image.fromarray(im_np_rgb)
+    img = img.resize((img.width // 2, img.height // 2))
     imgtk = ImageTk.PhotoImage(image=img)
     return imgtk
 
@@ -96,6 +97,7 @@ class CameraApp:
         self.mover_min=25
         self.mover_max=250
         self.mover_step=25
+        self.is_moving=False
 
         self.laser_min=0
         self.laser_max=250
@@ -201,7 +203,7 @@ class CameraApp:
         self.btn_7 = tk.Button(self.mover_panel, text="VISIT ALL", command=self.visit_all)
         self.btn_7.grid(row=5, column=2, padx=10, pady=10)
 
-        self.btn_8 = tk.Button(self.mover_panel, text="VISIT ALL AND SHOOT", command=self.visit_all_and_shoot, bg="red")
+        self.btn_8 = tk.Button(self.mover_panel, text="VISIT ALL AND SHOOT", command=lambda: self.visit_all(shoot=True), bg="red")
         self.btn_8.grid(row=6, column=1, padx=10, pady=10)
 
         ### Laser Panel
@@ -258,11 +260,14 @@ class CameraApp:
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
                 
             if self.isDetectionOn.get() == 1:
-                self.detection_boxes  = self.detector.split_inference(self.im_frame, self.threshold_slider.get())
+                if not self.is_moving:
+                    # update detection boxes
+                    self.detection_boxes  = self.detector.split_inference(self.im_frame, self.threshold_slider.get())
                 if len(self.detection_boxes) > 0:
                     #self.detection_boxes  = remove_overlapping_boxes(self.detection_boxes )
                     self.im_frame = draw_boxes(self.im_frame, self.detection_boxes)
                 else:
+                    self.detection_boxes = None
                     logging.warning("No detections found")
             
             imgtk = np_2_imageTK(self.im_frame)
@@ -313,7 +318,7 @@ class CameraApp:
 
 
     def click_event(self, event):
-        self.clicked_x, self.clicked_y = event.x, event.y
+        self.clicked_x, self.clicked_y = event.x*2, event.y*2
         logging.info("Clicked at (X: %s, Y: %s)", self.clicked_x, self.clicked_y)
 
     def move_2_last_click(self):
@@ -330,48 +335,35 @@ class CameraApp:
             logging.warning("No click event recorded")
 
 
-    def visit_all(self):
+    def visit_all(self, shoot=False):
         if self.detection_boxes is not None:
+            self.is_moving = True
 
-            def visit_boxes(detection_boxes, H):
+            def visit_boxes(detection_boxes, H, shoot):
                 for box in detection_boxes:
                     center = calculate_box_center(box)
                     mover_coords = transform_to_mover_coordinates(center, H)
-                    
                     self.move_mover(int(mover_coords[0]), int(mover_coords[1]))
-
                     time.sleep(1)
+                    if shoot:
+                        self.laser.shoot()
 
-            p = multiprocessing.Process(target=visit_boxes, args=(self.detection_boxes, self.H))
+            def process_finished_callback():
+                self.is_moving = False
+
+            p = multiprocessing.Process(target=visit_boxes, args=(self.detection_boxes, self.H, shoot))
             p.start()
+
+            def wait_for_process():
+                p.join()
+                self.root.after(0, process_finished_callback)
+
+            threading.Thread(target=wait_for_process).start()
         else:
             logging.warning("No detections found")
 
-    def visit_all_and_shoot(self):
-        return None
-        # if self.detection_boxes is not None:
-        #     for box in self.detection_boxes:
-        #         center = calculate_box_center(box)
-        #         mover_coords = transform_to_mover_coordinates(center,self.H)
-                
-        #         self.move_mover(int(mover_coords[0]), int(mover_coords[1]))
-        #         time.sleep(1)
-        #         self.laser.shoot()
+    ############## MoMAIN laser function ################
 
-        #         self.im_frame, frame_index = self.uvc_interface.read_frame()
-
-        #         if self.im_frame is not None:
-        #             #logging.info("Frame %s read successfully", frame_index)
-        #             self.im_frame = self.detector.draw_boxes(self.im_frame, self.detection_boxes)
-
-        #             imgtk = np_2_imageTK(self.im_frame)
-        #             self.display.imgtk = imgtk
-        #             self.display.config(image=imgtk)
-        #             self.canvas.config(scrollregion=self.canvas.bbox("all"))
-        #             self.root.update_idletasks()
-        #             self.root.update()
-        # else:
-        #     logging.warning("No detections found")
 
     def on_shoot(self):
         # grab the current timestamp and use it to construct the
