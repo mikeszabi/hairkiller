@@ -8,11 +8,36 @@ import sys
 import time
 import cv2
 import logging
-import threading
+#import threading
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+
+# # GStreamer pipeline USB kamerához
+# def gstreamer_pipeline_usb_cam(
+#     device="/dev/video0",
+#     width=640,
+#     height=480,
+#     framerate=25
+# ):
+#     return (
+#         f"v4l2src device={device} ! "
+#         f"video/x-raw, width={width}, height={height}, framerate={framerate}/1 ! "
+#         "videoconvert ! "
+#         "video/x-raw, format=(string)BGR ! appsink"
+#     )
+
+# def test_gstreamer():
+#     # Initializing camera with gstreamer pipeline
+#     cap = cv2.VideoCapture(gstreamer_pipeline_usb_cam(), cv2.CAP_GSTREAMER)
+
+#     if not cap.isOpened():
+#         print("Could not open camera!")
+#     else:
+#         ret, frame = cap.read()
+#         cv2.imwrite("test.jpg", frame)  # Ellenőrzés: mentés képként
+#         cap.release()
 
 def list_camera_details(max_index=6):
     cameras = []
@@ -47,7 +72,7 @@ class UVCInterface:
 
         selected_camera_index = None
         for cam in camera_details:
-            if cam[1] == 1280: # Assuming 1280x720 resolution
+            if cam[1] == 640: # Assuming 1280x720 resolution
                 selected_camera_index = cam[0]
                 logging.info("Camera with resolution 1280x720 found at index %s", selected_camera_index)
                 break
@@ -168,8 +193,11 @@ class UVCInterface:
 
 # Example usage
 if __name__ == "__main__":
+    list_camera_details()
+    #test_gstreamer()
     uvc = UVCInterface()
-    uvc.set_resolution(2560, 1920)
+    #uvc.set_resolution(2560, 1920)
+    uvc.set_resolution(1920, 1080)
     uvc.set_fps(10)
     while True:
         frame, frame_index = uvc.read_frame()
@@ -180,8 +208,13 @@ if __name__ == "__main__":
         # Process the frame (e.g., display it)
         cv2.imshow("Frame", frame)
         cv2.putText(frame, f"Frame index: {frame_index}", (30, 30), cv2.FONT_HERSHEY_SIMPLEX, 5, (255, 255, 255), 10)
-        logging.info("Frame index: %s", frame_index)
+        logging.info("Frame index: %s - Resolution: %sx%s - fps: %s" , frame_index,uvc.cap.get(cv2.CAP_PROP_FRAME_WIDTH), uvc.cap.get(cv2.CAP_PROP_FRAME_HEIGHT), uvc.cap.get(cv2.CAP_PROP_FPS))
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
     uvc.release()
+
+
+# v4l2-ctl --list-devices
+# v4l2-ctl --list-formats-ext
+# v4l2-ctl --all -d /dev/video0
