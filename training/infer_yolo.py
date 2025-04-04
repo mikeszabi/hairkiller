@@ -66,7 +66,8 @@ def merge_predictions(predictions, original_shape, grid_size=(4, 3)):
 
 def main():
     # Load model
-    model_path = r"./model/follicle_exit_v11s_20250301.pt"
+    model_path = r'./model/follicle_exit_v11s_20250301.pt'
+    #model_path = r"./model/follicle_exit_unsure_v8n_20250404.pt"
 
     model = YOLO(model_path)
     
