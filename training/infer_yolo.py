@@ -70,8 +70,21 @@ def main():
     model_path = r"./model/follicle_exit_v11i_yolov8n_20250513.pt"
 
     model = YOLO(model_path)
+    # Set device to GPU if available
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    model.to(device)
+    print(f"Using device: {device}")
+
+    # Load tile image
+    image_path = r"./images/hair_tile.jpg"
+    tile = cv2.imread(image_path)
+    with torch.no_grad():
+        results = model(tile, conf=0.2)[0]
+    result_img = results[0].plot()
+
+    cv2.imwrite('output_tile.jpg', result_img)
     
-    # Load image
+    # Load full size image
     image_path = r"./images/hair_test_live.jpg"
 
     image = cv2.imread(image_path)
@@ -95,8 +108,6 @@ def main():
     results = []
     with torch.no_grad():
         for tile in tiles:
-            # temp_path = '/home/mike/data/hair_raw/temp.jpg'
-            # cv2.imwrite(temp_path, tile)
             result = model(tile, conf=0.2)[0]
             results.append(result)
     
@@ -112,7 +123,7 @@ def main():
         cv2.putText(image, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
     
     # Save result
-    cv2.imwrite('output.jpg', image)
+    cv2.imwrite('output_full.jpg', image)
     print("Detection completed. Output saved as 'output.jpg'")
 
 if __name__ == '__main__':
