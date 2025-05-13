@@ -66,8 +66,8 @@ def merge_predictions(predictions, original_shape, grid_size=(4, 3)):
 
 def main():
     # Load model
-    model_path = r'./model/follicle_exit_v11s_20250301.pt'
-    #model_path = r"./model/follicle_exit_unsure_v8n_20250404.pt"
+    #model_path = r'./model/follicle_exit_v11s_20250301.pt'
+    model_path = r"./model/follicle_exit_unsure_v8n_20250404.pt"
 
     model = YOLO(model_path)
     
@@ -109,7 +109,7 @@ def main():
         x1, y1, x2, y2 = map(int, box)
         cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
         label = f'Class {int(cls)}: {score:.2f}'
-        cv2.putText(image, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+        cv2.putText(image, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
     
     # Save result
     cv2.imwrite('output.jpg', image)
