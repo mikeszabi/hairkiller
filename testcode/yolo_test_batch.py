@@ -1,8 +1,7 @@
-import os
 import cv2
+import torch
 import numpy as np
 from ultralytics import YOLO
-import torch
 
 def split_image(image):
     """Split image into pieces - so each tile have a size of 640x640"""
@@ -64,67 +63,55 @@ def merge_predictions(predictions, original_shape, grid_size=(4, 3)):
     
     return np.array(all_boxes), np.array(all_scores), np.array(all_classes)
 
+
+def preprocess_tiles(tiles):
+    """Resize and convert tiles to torch tensors (BGR->RGB)."""
+    tensor_tiles = []
+    for tile in tiles:
+        tile_resized = cv2.resize(tile, (640, 640))
+        tile_rgb = cv2.cvtColor(tile_resized, cv2.COLOR_BGR2RGB)
+        tile_tensor = torch.from_numpy(tile_rgb).permute(2, 0, 1).float() / 255.0
+        tensor_tiles.append(tile_tensor)
+    batch_tensor = torch.stack(tensor_tiles).to("cuda")
+    return batch_tensor
+
 def main():
-    # Load model
-    #model_path = r'./model/follicle_exit_v11s_20250301.pt'
-    model_path = r"./model/follicle_exit_v11i_yolov8n_20250513.pt"
+    # --- Load TensorRT YOLO model ---
 
+    model_path = "./model/follicle_exit_v11i_yolov8n_20250513.pt"
     model = YOLO(model_path)
-    # Set device to GPU if available
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    model.to(device)
-    print(f"Using device: {device}")
 
-    # Load tile image
-    image_path = r"./images/hair_tile.jpg"
-    tile = cv2.imread(image_path)
-    with torch.no_grad():
-        results = model(tile, conf=0.2)[0]
-    result_img = results[0].plot()
-
-    cv2.imwrite('output_tile.jpg', result_img)
-    
-    # Load full size image
-    image_path = r"./images/hair_test_live.jpg"
-
+    # --- Load and split full image ---
+    image_path = "./images/hair_test_live.jpg"
     image = cv2.imread(image_path)
     if image is None:
         print(f"Error: Could not load image at {image_path}")
         return
-    
-    # # Testing with original image
-    # im_np=image.copy()
-    # result = model(image_path, conf=0.1)[0]
-    # for box in result.boxes.xyxy.cpu().numpy():
-    #     x1, y1, x2, y2 = map(int, box)
-    #     cv2.rectangle(im_np, (x1, y1), (x2, y2), (0, 255, 0), 2)
-    # cv2.imwrite('original_large.jpg', im_np)
 
-
-    # Split image into grid
     tiles, original_shape, grid_size = split_image(image)
-    
-    # Run inference on all tiles
-    results = []
+    print(f"Split into {len(tiles)} tiles.")
+
+    # --- Preprocess tiles into batch tensor ---
+    tile_batch = preprocess_tiles(tiles)
+
+    # --- Inference in batch ---
     with torch.no_grad():
-        for tile in tiles:
-            result = model(tile, conf=0.2)[0]
-            results.append(result)
-    
-    # Merge predictions
-    boxes, scores, classes = merge_predictions(results, original_shape, grid_size)
-    if len(boxes) >0:
-        boxes_with_scores = np.concatenate((boxes, scores[:, None], classes[:,None]), axis=1)
-    # Draw predictions on original image
+        results = model(tile_batch, conf=0.2)
+
+    # --- Merge tile predictions back to original image ---
+    boxes, scores, classes = merge_predictions(results, image.shape, grid_size)  
+
+    # --- Draw results on original image ---
+    image_annotated = image.copy()
     for box, score, cls in zip(boxes, scores, classes):
         x1, y1, x2, y2 = map(int, box)
-        cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
-        label = f'Class {int(cls)}: {score:.2f}'
-        cv2.putText(image, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-    
-    # Save result
-    cv2.imwrite('output_full.jpg', image)
-    print("Detection completed. Output saved as 'output.jpg'")
+        label = f"{int(cls)}: {score:.2f}"
+        cv2.rectangle(image_annotated, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        cv2.putText(image_annotated, label, (x1, y1 - 5),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
 
-if __name__ == '__main__':
+    cv2.imwrite("output_full_image.jpg", image_annotated)
+    print("Merged detection result saved as output_full_image.jpg")
+
+if __name__ == "__main__":
     main()
