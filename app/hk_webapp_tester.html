@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Laser Control Tester</title>
+  <style>
+    body { font-family: sans-serif; background: #111; color: #eee; padding: 20px; }
+    h1 { color: #00ff88; }
+    img { border: 2px solid #00ff88; border-radius: 5px; max-width: 100%; margin-bottom: 20px; }
+    button, input[type=number], select {
+      margin: 5px; padding: 8px 12px; font-size: 16px;
+    }
+    .panel { margin-bottom: 20px; }
+  </style>
+</head>
+<body>
+  <h1>Laser Control Mock API Tester</h1>
+  <img src="http://localhost:8000/frame/current" alt="Camera Stream" />
+
+  <div class="panel">
+    <h2>Click Event</h2>
+    X: <input id="clickX" type="number" value="150">
+    Y: <input id="clickY" type="number" value="100">
+    <button onclick="sendClick()">Send Click</button>
+  </div>
+
+  <div class="panel">
+    <h2>Detection</h2>
+    <button onclick="toggleDetection(true)">Enable</button>
+    <button onclick="toggleDetection(false)">Disable</button>
+    <button onclick="getBoxes()">Get Boxes</button><br>
+    Threshold: <input id="threshold" type="number" step="0.05" min="0" max="1" value="0.3">
+    <button onclick="setThreshold()">Set Threshold</button>
+  </div>
+
+  <div class="panel">
+    <h2>Calibration</h2>
+    <button onclick="post('/calibration/start')">Start Calibration</button>
+    <button onclick="post('/calibration/store')">Store</button>
+    <button onclick="post('/calibration/random')">Random Move</button>
+    <button onclick="post('/calibration/save')">Save</button>
+    <button onclick="get('/calibration/status')">Get Status</button>
+  </div>
+
+  <div class="panel">
+    <h2>Mover</h2>
+    X: <input id="moveX" type="number" value="200">
+    Y: <input id="moveY" type="number" value="200">
+    <button onclick="moveTo()">Move To</button>
+    <select id="dir"><option>up</option><option>down</option><option>left</option><option>right</option></select>
+    Step: <input id="step" type="number" value="25">
+    <button onclick="moveDir()">Move Direction</button><br>
+    <button onclick="post('/mover/move_to_click')">Move to Last Click</button>
+    <button onclick="post('/mover/visit_all')">Visit All</button>
+    <button onclick="post('/mover/visit_all_and_shoot')">Visit & Shoot</button>
+  </div>
+
+  <div class="panel">
+    <h2>Laser</h2>
+    Intensity: <input id="intensity" type="number" min="0" max="255" value="128">
+    <button onclick="setIntensity()">Set Intensity</button>
+    Impulse: <input id="impulse" type="number" min="0" value="10">
+    <button onclick="setImpulse()">Set Impulse</button>
+    <button onclick="post('/laser/shoot')">Shoot</button><br>
+    <button onclick="setPointer(true)">Pointer On</button>
+    <button onclick="setPointer(false)">Pointer Off</button>
+  </div>
+
+  <div class="panel">
+    <h2>Vacuum</h2>
+    <button onclick="post('/vacuum/on')">Vacuum On</button>
+    <button onclick="post('/vacuum/off')">Vacuum Off</button>
+  </div>
+
+  <div class="panel">
+    <h2>System</h2>
+    <button onclick="post('/release')">Release</button>
+    <button onclick="post('/shutdown')">Shutdown</button>
+  </div>
+
+  <script>
+    const API = 'http://localhost:8000';
+
+    const post = async (endpoint, body = {}) => {
+      const res = await fetch(`${API}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      console.log(endpoint, data);
+      alert(JSON.stringify(data));
+    };
+
+    const get = async (endpoint) => {
+      const res = await fetch(`${API}${endpoint}`);
+      const data = await res.json();
+      console.log(endpoint, data);
+      alert(JSON.stringify(data));
+    };
+
+    const sendClick = () => {
+      const x = parseInt(document.getElementById('clickX').value);
+      const y = parseInt(document.getElementById('clickY').value);
+      post('/frame/click', { x, y });
+    };
+
+    const toggleDetection = (enable) => post('/detection/enable?enable=' + enable);
+
+    const getBoxes = () => get('/detection/boxes');
+
+    const setThreshold = () => {
+      const value = parseFloat(document.getElementById('threshold').value);
+      post('/detection/threshold?value=' + value);
+    };
+
+    const moveTo = () => {
+      const x = parseInt(document.getElementById('moveX').value);
+      const y = parseInt(document.getElementById('moveY').value);
+      post(`/mover/move?x=${x}&y=${y}`);
+    };
+
+    const moveDir = () => {
+      const dir = document.getElementById('dir').value;
+      const step = parseInt(document.getElementById('step').value);
+      post(`/mover/direction?direction=${dir}&step=${step}`);
+    };
+
+    const setPointer = (enabled) => post('/laser/pointer?enabled=' + enabled);
+
+    const setIntensity = () => {
+      const intensity = parseInt(document.getElementById('intensity').value);
+      post('/laser/intensity?intensity=' + intensity);
+    };
+
+    const setImpulse = () => {
+      const impulse = parseInt(document.getElementById('impulse').value);
+      post('/laser/impulse?impulse=' + impulse);
+    };
+  </script>
+</body>
+</html>
+<!-- This is a simple HTML page to test the laser control mock API.
+     It includes controls for sending clicks, managing detection, calibration,
+     moving the laser, controlling the laser itself, vacuum control, and system commands. -->
