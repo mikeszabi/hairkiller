@@ -2,12 +2,22 @@ from fastapi import FastAPI, Query, Response
 from pydantic import BaseModel
 from typing import List, Optional
 from fastapi.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 import io
 import time
 import cv2
 import numpy as np
 
 app = FastAPI(title="Laser Control Mocked API")
+
+# Enable CORS for all origins and methods
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Or specify ["http://localhost:PORT"] if needed
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ==== MODELS ====
 class Point(BaseModel):
@@ -142,9 +152,23 @@ def set_laser_intensity(intensity: int):
     laser_intensity = intensity
     return {"laser_intensity": laser_intensity}
 
+@app.post("/laser/impulse")
+def set_laser_impulse(impulse: int):
+    global laser_impulse
+    laser_impulse = impulse
+    return {"laser_impulse": laser_impulse}
+
 @app.post("/laser/shoot")
 def shoot_laser():
     return {"status": "laser_fired"}
+
+@app.post("/vacuum/on")
+def shoot_laser():
+    return {"status": "vacuum_on"}
+
+@app.post("/vacuum/off")
+def shoot_laser():
+    return {"status": "vacuum_off"}
 
 @app.post("/release")
 def release():

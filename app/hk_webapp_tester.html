@@ -59,9 +59,17 @@
     <h2>Laser</h2>
     Intensity: <input id="intensity" type="number" min="0" max="255" value="128">
     <button onclick="setIntensity()">Set Intensity</button>
+    Impulse: <input id="impulse" type="number" min="0" value="10">
+    <button onclick="setImpulse()">Set Impulse</button>
     <button onclick="post('/laser/shoot')">Shoot</button><br>
     <button onclick="setPointer(true)">Pointer On</button>
     <button onclick="setPointer(false)">Pointer Off</button>
+  </div>
+
+  <div class="panel">
+    <h2>Vacuum</h2>
+    <button onclick="post('/vacuum/on')">Vacuum On</button>
+    <button onclick="post('/vacuum/off')">Vacuum Off</button>
   </div>
 
   <div class="panel">
@@ -123,6 +131,11 @@
     const setIntensity = () => {
       const intensity = parseInt(document.getElementById('intensity').value);
       post('/laser/intensity?intensity=' + intensity);
+    };
+
+    const setImpulse = () => {
+      const impulse = parseInt(document.getElementById('impulse').value);
+      post('/laser/impulse?impulse=' + impulse);
     };
   </script>
 </body>
