@@ -1,3 +1,13 @@
+## Install camera utils
+sudo apt install v4l-utils
+
+# v4l2-ctl --list-devices
+# v4l2-ctl --list-formats-ext
+# v4l2-ctl --all -d /dev/video0
+
+
+## Setting up python environment
+
 # hairkiller
 
 #ON JETSON NANO

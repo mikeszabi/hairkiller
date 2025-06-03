@@ -1,3 +1,5 @@
+pyserial
 ultralytics
 onnx
 onnxsim
+scikit-learn
