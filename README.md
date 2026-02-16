@@ -1,20 +1,25 @@
-## Generate public key
-ssh-keygen
-cat /home/digdeep/.ssh/id_rsa.pub
+On Jetson Nano Orin
 
-## Install camera utils
+## Install camera utils if not installed
 sudo apt install v4l-utils
 
 # v4l2-ctl --list-devices
 # v4l2-ctl --list-formats-ext
 # v4l2-ctl --all -d /dev/video0
 
+## test camera
+gst-launch-1.0 v4l2src device=/dev/video0 io-mode=2 ! \
+image/jpeg, width=1920, height=1080, framerate=30/1 ! \
+nvv4l2decoder mjpeg=1 ! \
+nvvidconv ! nveglglessink
+
+## hairkiller git project
+# Generate public key
+ssh-keygen
+cat /home/digdeep/.ssh/id_rsa.pub
 
 ## Setting up python environment
-
-# hairkiller
-
-#ON JETSON NANO
+apt install python3.10-venv
 python3 -m venv yolo_env
 source yolo_env/bin/activate
 
