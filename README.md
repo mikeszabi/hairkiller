@@ -1,3 +1,7 @@
+## Generate public key
+ssh-keygen
+cat /home/digdeep/.ssh/id_rsa.pub
+
 ## Install camera utils
 sudo apt install v4l-utils
 
