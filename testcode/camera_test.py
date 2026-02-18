@@ -1,75 +1,65 @@
+# v4l2-ctl --list-devices
+# v4l2-ctl --list-formats-ext
+# v4l2-ctl --all -d /dev/video0
+
+
 import cv2
 
-def list_camera_details(max_index=10):
-    cameras = []
-    for index in range(max_index):
-        try:
-            cap = cv2.VideoCapture(index)
-            if cap.isOpened():
-                # Get some properties (e.g., frame width, height) for identification
-                width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
-                height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
-                fps = cap.get(cv2.CAP_PROP_FPS)
-                cameras.append((index, width, height, fps))
-                cap.release()
-        except Exception as e:
-            print(f"Error: Could not open camera index {index}.")
-    return cameras
+def find_cameras(max_index=2):
+    found = []
+    for i in range(max_index):
+        cap = cv2.VideoCapture(i, cv2.CAP_V4L2)
+        if cap.isOpened():
+            found.append(i)
+            cap.release()
+    return found
 
-# List available cameras with details
-camera_details = list_camera_details()
-if camera_details:
-    for cam in camera_details:
-        print(f"Camera Index: {cam[0]}, Resolution: {cam[1]}x{cam[2]}, FPS: {cam[3]}")
-else:
-    print("No cameras detected.")
+camera_indexes = find_cameras(2)
+print("Found camera indexes:", camera_indexes)
 
+if not camera_indexes:
+    raise SystemExit("No cameras detected.")
 
-# Open a connection to the UVC camera (usually camera index 0 for the first USB camera)
+idx = camera_indexes[0]  # pick the first one (or choose manually)
+cap = cv2.VideoCapture(idx, cv2.CAP_V4L2)
 
-selected_camera_index = None
-for cam in camera_details:
-    if cam[1] == 1280:
-        selected_camera_index = cam[0]
-        break
+# Request MJPG (important for high resolutions on many UVC cams)
+cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
 
-if selected_camera_index is None:
-    print("No camera with the specified width found.")
-    exit()
+# Request a mode (start lower if needed, then increase)
+# change values according to camera capabilities
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 2592)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1944)
+cap.set(cv2.CAP_PROP_FPS, 10)
 
-cap = cv2.VideoCapture(selected_camera_index)
-
-#cap = cv2.VideoCapture(2)  # Change the index if you have multiple cameras
-
-# Check if the camera opened successfully
 if not cap.isOpened():
-    print("Error: Could not open camera.")
-    exit()
+    raise SystemExit("Error: Could not open camera.")
 
-# # Set resolution (optional)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 2560)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1920)
+# Read a few frames to let it settle
+for _ in range(5):
+    cap.read()
 
-# Display the camera feed
+w = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+h = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+fps = cap.get(cv2.CAP_PROP_FPS)
+print(f"Opened: {w}x{h} @ {fps} fps")
+
+last_frame = None
 while True:
-    # Capture frame-by-frame
     ret, frame = cap.read()
-    print(frame.shape)
-    
-    # If frame is read correctly, ret is True
-    if not ret:
+    if not ret or frame is None:
         print("Error: Could not read frame.")
         break
-    
-    # Display the resulting frame
-    cv2.imshow('UVC Camera Stream', frame)
-    
-    # Press 'q' to exit the loop
-    if cv2.waitKey(1) & 0xFF == ord('q'):
+
+    last_frame = frame
+    cv2.imshow("UVC Camera Stream", frame)
+
+    if cv2.waitKey(1) & 0xFF == ord("q"):
         break
 
-# Release the capture and close the window
 cap.release()
 cv2.destroyAllWindows()
 
-cv2.imwrite('test.jpg', frame)
+if last_frame is not None:
+    cv2.imwrite("test.jpg", last_frame)
+    print("Saved test.jpg")
