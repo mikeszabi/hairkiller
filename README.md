@@ -142,6 +142,9 @@ No "Numpy is not available" error.
 
 🔌 Serial Port Support
 pip install pyserial
+
+ls -l /dev/ttyUSB* /dev/ttyACM* /dev/ttyTHS* 2>/dev/null || true
+
 🧠 Summary of Critical Jetson Rules
 
 Use NVIDIA torch wheels only
