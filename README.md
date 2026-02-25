@@ -40,7 +40,9 @@ sudo apt install -y python3.10-venv python3-opencv
 
 Create virtual environment (keep system packages!)
 python3 -m venv --system-site-packages yolo_venv
-source yolo_venv/bin/activate
+
+** source yolo_venv/bin/activate **
+
 Test OpenCV
 python -c "import cv2; print(cv2.__version__)"
 🔥 Install NVIDIA PyTorch (JetPack 6.x)

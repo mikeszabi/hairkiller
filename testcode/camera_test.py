@@ -28,7 +28,7 @@ cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
 
 # Request a mode (start lower if needed, then increase)
 # change values according to camera capabilities
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 2592)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 2692)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1944)
 cap.set(cv2.CAP_PROP_FPS, 10)
 
@@ -44,15 +44,33 @@ h = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
 fps = cap.get(cv2.CAP_PROP_FPS)
 print(f"Opened: {w}x{h} @ {fps} fps")
 
+# create a resizable window and set desired display size
+cv2.namedWindow("UVC Camera Stream", cv2.WINDOW_NORMAL)
+cv2.resizeWindow("UVC Camera Stream", 1280, 720)  # adjust as needed
+
 last_frame = None
 while True:
     ret, frame = cap.read()
+    print(f"Read frame: {ret}, shape: {frame.shape if frame is not None else 'None'}")
     if not ret or frame is None:
         print("Error: Could not read frame.")
         break
 
-    last_frame = frame
-    cv2.imshow("UVC Camera Stream", frame)
+    # last_frame = frame
+    # draw a hard-coded bounding box (modify coords as needed)
+    tl = (336, 12)  # top-left corner (x, y)
+    br = (2256, 1932)  # bottom-right corner (x, y)
+    color = (0, 255, 0)  # green
+    thickness = 2
+    # cv2.rectangle(frame, tl, br, color, thickness)
+
+    # crop using numpy slicing: frame[y1:y2, x1:x2]
+    x1, y1 = tl
+    x2, y2 = br
+    cropped = frame[y1:y2, x1:x2]
+    print(f"Cropped frame size: {cropped.shape[1]}x{cropped.shape[0]}")
+    last_frame = cropped
+    cv2.imshow("UVC Camera Stream", cropped)
 
     if cv2.waitKey(1) & 0xFF == ord("q"):
         break
