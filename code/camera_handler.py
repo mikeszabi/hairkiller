@@ -11,17 +11,48 @@ import cv2
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 os.environ["OPENCV_LOG_LEVEL"] = "SILENT"
 
+DEV = "/dev/v4l/by-id/usb-Arducam_Technology_Co.__Ltd._Arducam_16MP_SN0001-video-index0"
 
-def find_cameras(max_index=2):
-    """Return a list of camera device indices that can be opened."""
-    found = []
-    for i in range(max_index):
-        cap = cv2.VideoCapture(i, cv2.CAP_V4L2)
-        if cap.isOpened():
-            found.append(i)
-            cap.release()
-    return found
+W, H, FPS = 2592, 1944, 10
+FOURCC = "MJPG"
 
+MAX_FAILS = 10          # ennyi egymás utáni read fail után restart
+BACKOFF = 1.0           # restart előtt várakozás
+WARMUP = 10
+
+# def find_cameras(max_index=2):
+#     """Return a list of camera device indices that can be opened."""
+#     found = []
+#     for i in range(max_index):
+#         cap = cv2.VideoCapture(i, cv2.CAP_V4L2)
+#         if cap.isOpened():
+#             found.append(i)
+#             cap.release()
+#     return found
+
+def open_cam():
+    cap = cv2.VideoCapture(DEV, cv2.CAP_V4L2)
+    if not cap.isOpened():
+        return None
+
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*FOURCC))
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, W)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, H)
+    cap.set(cv2.CAP_PROP_FPS, FPS)
+
+    # gyakran segít, hogy ne álljon bent sok régi frame:
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 2)
+
+    for _ in range(WARMUP):
+        cap.read()
+
+    w = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+    h = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    fourcc = int(cap.get(cv2.CAP_PROP_FOURCC))
+    f = "".join([chr((fourcc >> 8*i) & 0xFF) for i in range(4)])
+    print(f"Opened negotiated: {w}x{h}@{fps} fourcc={f}", flush=True)
+    return cap
 
 class UVCInterface:
     """Basic interface for a USB/UVC camera.
@@ -32,50 +63,23 @@ class UVCInterface:
 
     def __init__(
         self,
-        index: int | None = None,
-        max_search: int = 2,
-        width: int = 2692,
-        height: int = 1944,
         crop_x: int = 336,
         crop_y: int = 12,
         crop_w: int = 1920,
         crop_h: int = 1920,
-        fps: int = 10,
-        fourcc: str = "MJPG",
     ) -> None:
         # store user-provided/default parameters
-        self.max_search = max_search
-        self.width = width
-        self.height = height
-        self.fps = fps
-        self.fourcc = fourcc
 
         self.crop_x = crop_x
         self.crop_y = crop_y
         self.crop_w = crop_w
         self.crop_h = crop_h
 
-        # pick a camera index if one wasn't specified
-        if index is None:
-            cameras = find_cameras(self.max_search)
-            logging.info("Found camera indexes: %s", cameras)
-            if not cameras:
-                raise ValueError("No cameras detected.")
-            index = cameras[0]
-            logging.info("Using camera index %s", index)
-
-        self.camera_index = index
-
-        self.camera_index = index
-        self.cap = cv2.VideoCapture(self.camera_index, cv2.CAP_V4L2)
-        if not self.cap.isOpened():
-            raise ValueError(f"Could not open camera {self.camera_index}")
-
-        # apply requested settings
-        self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*self.fourcc))
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
-        self.cap.set(cv2.CAP_PROP_FPS, self.fps)
+        self.cap = None
+        fails = 0
+        self.cap = open_cam()
+        if self.cap is None:
+            raise ValueError(f"Could not open camera {DEV}")
 
         self.frame_index = 0
 
@@ -106,10 +110,6 @@ class UVCInterface:
 
 # simple command‑line demonstration (mirrors camera_test behaviour)
 if __name__ == "__main__":
-    cams = find_cameras(2)
-    print("Found camera indexes:", cams)
-    if not cams:
-        raise SystemExit("No cameras detected.")
 
     with UVCInterface() as uvc:
         # show a small window to verify

@@ -14,15 +14,15 @@ def preprocess_tiles(tiles):
     """Resize and convert tiles to torch tensors (BGR->RGB)."""
     tensor_tiles = []
     for tile in tiles:
-        tile_resized = cv2.resize(tile, (640, 640))
-        #tile_resized = cv2.cvtColor(tile_resized, cv2.COLOR_BGR2RGB)
-        tile_tensor = torch.from_numpy(tile_resized).permute(2, 0, 1).float() / 255.0
+        #tile_resized = cv2.resize(tile, (640, 640))
+        tile = cv2.cvtColor(tile, cv2.COLOR_BGR2RGB)
+        tile_tensor = torch.from_numpy(tile).permute(2, 0, 1).float() / 255.0
         tensor_tiles.append(tile_tensor)
     batch_tensor = torch.stack(tensor_tiles).to("cuda")
     return batch_tensor
 
 class ObjectDetector:
-        def __init__(self, model_path, device="cpu"):
+        def __init__(self, model_path, device="cuda"):
             self.model_path=model_path
             self.model = YOLO(self.model_path)
             if device == "cuda" and torch.cuda.is_available():
@@ -37,7 +37,7 @@ class ObjectDetector:
             boxes_with_scores = results_cpu.boxes
             return boxes_with_scores.data.numpy()
         
-        def split_inference(self, image, conf=0.05):
+        def split_inference(self, image, conf=0.1):
             # large images are split into smaller (640x604) tiles, then batch processed
              # Split image into grid
             tiles, original_shape, grid_size = split_image(image)
@@ -48,7 +48,14 @@ class ObjectDetector:
 
             # --- Inference in batch ---
             with torch.no_grad():
-                results = self.model(tile_batch, conf=0.2)
+                results = self.model(tile_batch, conf=conf)
+
+            # # Run inference on all tiles
+            # results = []
+            # with torch.no_grad():
+            #     for tile in tiles:
+            #         result = self.model(tile, conf=conf)[0]
+            #         results.append(result)
 
             # --- Merge tile predictions back to original image ---
             boxes, scores, classes = merge_predictions(results, image.shape, grid_size)  
@@ -67,13 +74,13 @@ def main():
     detector = ObjectDetector(model_path)
 
     # --- Load and split full image ---
-    image_path = "./images/hair_test_live.jpg"
+    image_path = "./images/hair_test_live_2.jpg"
     im_frame = cv2.imread(image_path)
     if im_frame is None:
         print(f"Error: Could not load image at {image_path}")
         return
 
-    boxes_with_scores=detector.split_inference(im_frame, conf=0.2)
+    boxes_with_scores=detector.split_inference(im_frame, conf=0.1)
     if len(boxes_with_scores) == 0:
         print("No objects detected.")
         return

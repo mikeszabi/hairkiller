@@ -82,7 +82,7 @@ def main():
     model = YOLO(model_path)
 
     # --- Load and split full image ---
-    image_path = "./images/hair_test_live.jpg"
+    image_path = "./images/hair_test_live_2.jpg"
     image = cv2.imread(image_path)
     if image is None:
         print(f"Error: Could not load image at {image_path}")

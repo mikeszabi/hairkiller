@@ -1,83 +1,97 @@
 # v4l2-ctl --list-devices
 # v4l2-ctl --list-formats-ext
 # v4l2-ctl --all -d /dev/video0
+# ls -l /dev/v4l/by-id/
+# ls -l /dev/v4l/by-path/
 
 
-import cv2
+import cv2, time
 
-def find_cameras(max_index=2):
-    found = []
-    for i in range(max_index):
-        cap = cv2.VideoCapture(i, cv2.CAP_V4L2)
-        if cap.isOpened():
-            found.append(i)
-            cap.release()
-    return found
+DEV = "/dev/v4l/by-id/usb-Arducam_Technology_Co.__Ltd._Arducam_16MP_SN0001-video-index0"
 
-camera_indexes = find_cameras(2)
-print("Found camera indexes:", camera_indexes)
+W, H, FPS = 2592, 1944, 10
+FOURCC = "MJPG"
 
-if not camera_indexes:
-    raise SystemExit("No cameras detected.")
+MAX_FAILS = 10          # ennyi egymás utáni read fail után restart
+BACKOFF = 1.0           # restart előtt várakozás
+WARMUP = 10
 
-idx = camera_indexes[0]  # pick the first one (or choose manually)
-cap = cv2.VideoCapture(idx, cv2.CAP_V4L2)
+def open_cam():
+    cap = cv2.VideoCapture(DEV, cv2.CAP_V4L2)
+    if not cap.isOpened():
+        return None
 
-# Request MJPG (important for high resolutions on many UVC cams)
-cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*FOURCC))
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, W)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, H)
+    cap.set(cv2.CAP_PROP_FPS, FPS)
 
-# Request a mode (start lower if needed, then increase)
-# change values according to camera capabilities
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 2692)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1944)
-cap.set(cv2.CAP_PROP_FPS, 10)
+    # gyakran segít, hogy ne álljon bent sok régi frame:
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 2)
 
-if not cap.isOpened():
-    raise SystemExit("Error: Could not open camera.")
+    for _ in range(WARMUP):
+        cap.read()
 
-# Read a few frames to let it settle
-for _ in range(5):
-    cap.read()
+    w = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+    h = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    fourcc = int(cap.get(cv2.CAP_PROP_FOURCC))
+    f = "".join([chr((fourcc >> 8*i) & 0xFF) for i in range(4)])
+    print(f"Opened negotiated: {w}x{h}@{fps} fourcc={f}", flush=True)
+    return cap
 
-w = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
-h = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
-fps = cap.get(cv2.CAP_PROP_FPS)
-print(f"Opened: {w}x{h} @ {fps} fps")
+def main():
+    cv2.namedWindow("UVC", cv2.WINDOW_NORMAL)
+    cv2.resizeWindow("UVC", 1280, 720)
 
-# create a resizable window and set desired display size
-cv2.namedWindow("UVC Camera Stream", cv2.WINDOW_NORMAL)
-cv2.resizeWindow("UVC Camera Stream", 1280, 720)  # adjust as needed
+    cap = None
+    fails = 0
 
-last_frame = None
-while True:
-    ret, frame = cap.read()
-    print(f"Read frame: {ret}, shape: {frame.shape if frame is not None else 'None'}")
-    if not ret or frame is None:
-        print("Error: Could not read frame.")
-        break
+    while True:
+        if cap is None:
+            cap = open_cam()
+            if cap is None:
+                print("Open failed, retry...", flush=True)
+                time.sleep(BACKOFF)
+                continue
+            fails = 0
 
-    # last_frame = frame
-    # draw a hard-coded bounding box (modify coords as needed)
-    tl = (336, 12)  # top-left corner (x, y)
-    br = (2256, 1932)  # bottom-right corner (x, y)
-    color = (0, 255, 0)  # green
-    thickness = 2
-    # cv2.rectangle(frame, tl, br, color, thickness)
+        ret, frame = cap.read()
 
-    # crop using numpy slicing: frame[y1:y2, x1:x2]
-    x1, y1 = tl
-    x2, y2 = br
-    cropped = frame[y1:y2, x1:x2]
-    print(f"Cropped frame size: {cropped.shape[1]}x{cropped.shape[0]}")
-    last_frame = cropped
-    cv2.imshow("UVC Camera Stream", cropped)
+        if not ret or frame is None:
+            fails += 1
+            print(f"Read fail #{fails}", flush=True)
+            if fails >= MAX_FAILS:
+                print("Too many fails -> reopen", flush=True)
+                try:
+                    cap.release()
+                except Exception:
+                    pass
+                cap = None
+                time.sleep(BACKOFF)
+            continue
 
-    if cv2.waitKey(1) & 0xFF == ord("q"):
-        break
+        fails = 0
 
-cap.release()
-cv2.destroyAllWindows()
+        # crop (ellenőrzéssel)
+        # tl = (336, 12)
+        # br = (2256, 1932)
+        # x1, y1 = tl
+        # x2, y2 = br
+        # if frame.shape[1] >= x2 and frame.shape[0] >= y2:
+        #     cropped = frame[y1:y2, x1:x2]
+        # else:
+        #     cropped = frame
 
-if last_frame is not None:
-    cv2.imwrite("test.jpg", last_frame)
-    print("Saved test.jpg")
+        cv2.imshow("UVC", frame)
+
+        if cv2.waitKey(1) & 0xFF == ord("q"):
+            cv2.imwrite("test.jpg", frame)
+            break
+
+    if cap is not None:
+        cap.release()
+    cv2.destroyAllWindows()
+
+if __name__ == "__main__":
+    main()
