@@ -3,3 +3,5 @@ ultralytics
 onnx
 onnxsim
 scikit-learn
+uvicorn
+fastapi

@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>HK Calibration App</title>
+  <style>
+    body { font-family: sans-serif; background: #222; color: #eee; padding: 20px; }
+    h1 { color: #0f0; }
+    #video-container { display: inline-block; }
+    img { display: block; max-width: 100%; border: 2px solid #0f0; }
+    .panel { margin-top: 20px; }
+    button, input[type=number], input[type=checkbox], label { margin: 4px; padding: 6px 10px; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <h1>HK Calibration Application</h1>
+
+  <div id="video-container">
+    <img id="cam" src="http://localhost:8000/frame/current" alt="camera stream" />
+  </div>
+  <div class="panel">
+    <h2>Detection</h2>
+    <label>
+      <input id="detectionToggle" type="checkbox" onchange="toggleDetection()"> 
+      <strong>Enable red dot detection (draws on stream)</strong>
+    </label>
+    <div style="margin-top:8px; padding:8px; background:#333; border-radius:4px;">
+      <div><strong>Dot in Image:</strong> X=<span id="dotImageX">-</span> Y=<span id="dotImageY">-</span></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Mover control</h2>
+    <div style="margin-bottom:10px; padding:8px; background:#333; border-radius:4px;">
+      <div><strong>Galvo Position:</strong> X=<span id="galvoX">-</span> Y=<span id="galvoY">-</span></div>
+    </div>
+    X: <input id="moveX" type="number" value="3000"> Y: <input id="moveY" type="number" value="3000">
+    <button onclick="moveTo()">Move to</button><br>
+    <button onclick="moveDir('up')">↑ Up</button>
+    <button onclick="moveDir('down')">↓ Down</button>
+    <button onclick="moveDir('left')">← Left</button>
+    <button onclick="moveDir('right')">→ Right</button>
+    Step: <input id="step" type="number" value="25" style="width:60px;">
+  </div>
+
+  <div class="panel">
+    <h2>Calibration</h2>
+    <button onclick="startCalibration()">Start</button>
+    <button onclick="storePoint()">Store point</button>
+    <button onclick="saveCalibration()">Save</button>
+    <span>Points stored: <strong id="storedCount">0</strong></span>
+  </div>
+
+  <script>
+    const API = 'http://localhost:8000';
+    const cam = document.getElementById('cam');
+
+    // periodically fetch and display the dot coordinates from the API
+    async function updateDotCoordinates() {
+      try {
+        const res = await fetch(`${API}/dot`);
+        const data = await res.json();
+        const {x, y} = data;
+        if (x !== null && y !== null) {
+          document.getElementById('dotImageX').textContent = x;
+          document.getElementById('dotImageY').textContent = y;
+        } else {
+          document.getElementById('dotImageX').textContent = `-`;
+          document.getElementById('dotImageY').textContent = `-`;
+        }
+      } catch (err) {
+        console.error("Error fetching dot:", err);
+      }
+    }
+
+    // poll for dot coordinates every 500ms
+    setInterval(updateDotCoordinates, 500);
+
+    const toggleDetection = async () => {
+      const checked = document.getElementById('detectionToggle').checked;
+      const res = await fetch(`${API}/detection/toggle?enabled=${checked}`, {method: 'POST'});
+      const data = await res.json();
+      console.log("Detection toggled:", data);
+    };
+
+    const post = async (endpoint, body={}) => {
+      const res = await fetch(`${API}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      return res.json();
+    };
+
+    const moveTo = async () => {
+      const x = parseInt(document.getElementById('moveX').value);
+      const y = parseInt(document.getElementById('moveY').value);
+      const r = await post(`/mover/move?x=${x}&y=${y}`);
+      console.log("Moved to", r);
+      updateGalvoDisplay();
+    };
+
+    const moveDir = async (dir) => {
+      const step = parseInt(document.getElementById('step').value);
+      const r = await post(`/mover/direction?direction=${dir}&step=${step}`);
+      console.log("Moved", dir, r);
+      updateGalvoDisplay();
+    };
+
+    // update galvo position display
+    async function updateGalvoDisplay() {
+      try {
+        const res = await fetch(`${API}/mover/pos`);
+        const data = await res.json();
+        document.getElementById('galvoX').textContent = data.x !== null ? data.x : 'ERR';
+        document.getElementById('galvoY').textContent = data.y !== null ? data.y : 'ERR';
+      } catch (err) {
+        console.error("Error fetching galvo pos:", err);
+      }
+    }
+
+    // update galvo display periodically
+    setInterval(updateGalvoDisplay, 1000);
+
+    const startCalibration = async () => {
+      const r = await post('/calibration/start');
+      console.log(r);
+      document.getElementById('storedCount').textContent = '0';
+    };
+
+    const storePoint = async () => {
+      const r = await post('/calibration/store');
+      document.getElementById('storedCount').textContent = r.stored;
+      console.log(r);
+    };
+
+    const saveCalibration = async () => {
+      const r = await post('/calibration/save');
+      console.log(r);
+      alert(JSON.stringify(r));
+    };
+  </script>
+</body>
+</html>

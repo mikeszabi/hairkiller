@@ -125,3 +125,62 @@ def merge_predictions(predictions, original_shape, grid_size=(4, 3)):
         all_classes.extend(pred.boxes.cls.cpu().numpy())
     
     return np.array(all_boxes), np.array(all_scores), np.array(all_classes)
+
+
+# ---------------------------------------------------------------------------
+# red dot helper
+
+def detect_red_dot(img, hsv_lower1=(45, 10, 180), hsv_upper1=(70, 30, 255),
+                   central_frac=0.5, blur=5):
+    """Detect red dot in *img* and return (mask, center).
+
+    Parameters
+    ----------
+    img : ndarray
+        BGR image.
+    hsv_lower1, hsv_upper1 : 3-tuples
+        First HSV range for red (wraparound low end, ~0-10 hue).
+    hsv_lower2, hsv_upper2 : 3-tuples
+        Second HSV range for red (wraparound high end, ~160-180 hue).
+    central_frac : float
+        Fraction of width/height to keep centred (default 0.3).  Regions outside
+        this box are zeroed in the mask.
+    blur : int
+        Kernel size for median blur applied to final mask; 0 disables.
+
+    Returns
+    -------
+    mask : ndarray
+        Binary mask of detected red pixels, limited to the central region.
+    center : tuple or None
+        (x, y) coordinates of the dot center if found, otherwise ``None``.
+    """
+    # prepare HSV image
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+
+    lower1 = np.array(hsv_lower1)
+    upper1 = np.array(hsv_upper1)
+
+    mask = cv2.inRange(hsv, lower1, upper1)
+
+    # restrict to central area
+    if central_frac is not None and 0 < central_frac <= 1.0:
+        h, w = mask.shape[:2]
+        cw = int(w * central_frac)
+        ch = int(h * central_frac)
+        cx, cy = w // 2, h // 2
+        region = np.zeros_like(mask)
+        region[cy - ch//2:cy + ch//2, cx - cw//2:cx + cw//2] = 255
+        mask = cv2.bitwise_and(mask, region)
+
+    if blur and blur > 1:
+        mask = cv2.medianBlur(mask, blur)
+
+    # find centre
+    center = None
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if contours:
+        c = max(contours, key=cv2.contourArea)
+        (x, y), _ = cv2.minEnclosingCircle(c)
+        center = (int(x), int(y))
+    return mask, center

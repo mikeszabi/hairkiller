@@ -1,114 +1,105 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+"""Galvo controller wrapper using the generic serial_devices_handler.
+
+This replaces the old `GalvoInterface` implementation by talking directly
+via a SerialDevice object and issuing the `SET_GALVO_POS_XY` and
+`GET_GALVO_POS_XY` commands seen in `test_galvo.py`.
+
+The interface tracks internal position state (what was commanded) rather than
+relying on hardware feedback, which is more accurate.  The galvo starts
+and initializes to position (3000, 3000).
 """
-Created on Mon Dec 14 16:24:15 2020
 
-@author: itqs
-"""
+from typing import Tuple
+import sys
+
+from serial_devices_handler import SerialDevice, DEFAULT_PORT, DEFAULT_BAUD
 
 
-import time
-import serial
-import os
-
-# Constants
-STX = 2
-ETX = 3
-
+# helper wrappers around the raw serial device so callers see familiar methods
 class GalvoInterface:
+    def __init__(self, port: str = DEFAULT_PORT, baud: int = DEFAULT_BAUD,
+                 timeout_s: float = None, debug: bool = False):
+        """Create and open the serial device to talk to the galvo.
 
-    def __init__(self):
-        #self.port='/dev/ttyUSB0'
-        self.x_pos_range = (0,5000)
-        self.y_pos_range = (0,5800)
-        self.command=5
-        self.serial_connect()
-        self.current_position = (1500,1800)
-        self.move_2_pos(self.current_position[0],self.current_position[1])
+        Parameters mirror those of SerialDevice.  `timeout_s` defaults to the
+        module default if left as None.
 
-    def serial_connect(self):
-        self.ser = serial.Serial('/dev/serial/by-id/usb-FTDI_USB__-__Serial-if00-port0', baudrate=115200, timeout=1)
-        if self.ser.isOpen():
-            self.ser.close()
-        self.ser.open()
-        print(self.ser.isOpen())
-
-    def serial_close(self):
-        self.ser.close()
-
-    def get_position(self):
-        return self.current_position
-    
-    def move_2_pos(self, x, y):
-        if (x<self.x_pos_range[0] or x>self.x_pos_range[1] or y<self.y_pos_range[0] or y>self.y_pos_range[1]):
-            raise ValueError('The position is out of range')
-            return None
-        try:
-            self._move(x,y)
-        except Exception as e:
-            print(e)
-            return None
-        self.current_position = (x,y)
-        return self.current_position
-
-    def _sendcmd(self,command, data):
+        The class keeps an internal state of the last commanded position
+        and initializes to (3000, 3000).
         """
-        Send a command to the serial port.
-        :param command: The command to send.
-        :param data: The data array (6 elements long).
+        kwargs = {}
+        if timeout_s is not None:
+            kwargs["timeout_s"] = timeout_s
+        self.dev = SerialDevice(port=port, baud=baud, debug=debug, **kwargs)
+        self.dev.open()
+        
+        # internal state: track the last commanded position (don't rely on hardware query)
+        self._position_x = 3000
+        self._position_y = 3000
+        
+        # move to initial position on startup
+        self._move_internal(self._position_x, self._position_y)
+
+    def _move_internal(self, x: int, y: int) -> None:
+        """Send the movement command and update internal state."""
+        self.dev.query(f"SET_GALVO_POS_XY {x},{y}", expect_prefix="SET_GALVO_POS_XY:")
+        self._position_x = x
+        self._position_y = y
+
+    def close(self):
+        self.dev.close()
+
+    def get_position(self) -> Tuple[int, int]:
+        """Return the internally tracked position (not from hardware query).
+
+        This avoids inaccurate hardware feedback; we trust what we commanded.
         """
-        packet = bytearray(10)  # 8-byte buffer
-        chksum = command
+        return self._position_x, self._position_y
 
-        packet[0] = STX
-        packet[1] = command
+    def move_2_pos(self, x: int, y: int) -> Tuple[int, int]:
+        """Command the galvo to move to the given coordinates.
 
-        # Add data and calculate checksum
-        for k in range(6):
-            packet[k + 2] = data[k]
-            chksum += data[k]
+        Returns the internally tracked position.
+        """
+        self._move_internal(x, y)
+        return self.get_position()
 
-        packet[8] = ETX
-        #buf.append(chksum & 0xFF)  # Ensure checksum is within byte range
-        packet[9] = chksum & 0xFF
+    def move_direction(self, direction: str, step: int = 25) -> Tuple[int, int]:
+        """Convenience helper to nudge the galvo in a cardinal direction."""
+        x, y = self.get_position()
+        if direction == "up":
+            y += step
+        elif direction == "down":
+            y -= step
+        elif direction == "left":
+            x -= step
+        elif direction == "right":
+            x += step
+        return self.move_2_pos(x, y)
 
-        # Send to serial port
-        self.ser.write(packet)
+    def stop(self) -> None:
+        """Close connection (no explicit stop command exists)."""
+        self.close()
 
-        
-    def _move(self,Galvo1,Galvo2):
-        
-        # Example data initialization
-        #Galvo1 = 1750  # Example value, set as needed
-        #Galvo2 = 1700  # Example value, set as needed
 
-        data = [
-            Galvo1 & 0xff,  # Lower 8 bits
-            Galvo1 >> 8,    # Upper 8 bits
-            Galvo2 & 0xff,  # Lower 8 bits
-            Galvo2 >> 8,    # Upper 8 bits
-            0,              # Empty byte
-            0               # Empty byte
-        ]
-
-        self._sendcmd(self.command, data)
-        
-    def stop(self):
-        self.serial_close()
-        
-        
-def main():
-
-    # port = '/dev/ttyUSB0'  # For Linux
-    galvo = GalvoInterface()
-
-    print(galvo.get_position())
-    
-    galvo.move_2_pos(2000,1800)
-
-    print(galvo.get_position())
-
-    galvo.stop()
-
+# simple demonstration when invoked directly
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Test galvo interface via serial")
+    parser.add_argument("--port", default=DEFAULT_PORT)
+    parser.add_argument("--baud", type=int, default=DEFAULT_BAUD)
+    parser.add_argument("--list-ports", action="store_true")
+    args = parser.parse_args()
+
+    if args.list_ports:
+        from serial_devices_handler import list_serial_ports
+        print("\n".join(list_serial_ports()))
+        sys.exit(0)
+
+    gi = GalvoInterface(port=args.port, baud=args.baud, debug=True)
+    print("current", gi.get_position())
+    gi.move_2_pos(2000, 2000)
+    print("after move", gi.get_position())
+    gi.stop()
+

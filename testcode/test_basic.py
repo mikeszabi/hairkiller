@@ -1,7 +1,10 @@
 import sys
 import time
+from pathlib import Path
 
-from serial_device import SerialDevice, list_serial_ports, parse_args_base
+sys.path.append(str(Path(__file__).parent.parent / "code"))
+
+from serial_devices_handler import SerialDevice, list_serial_ports, parse_args_base
 
 
 def main():
