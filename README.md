@@ -142,6 +142,108 @@ No NumPy warnings.
 No torchvision::nms error.
 No "Numpy is not available" error.
 
+---
+
+### � Unified Calibration & Homography Web App
+
+A FastAPI service and HTML interface for full calibration and homography testing workflow:
+
+**Start the server:**
+```bash
+source yolo_venv/bin/activate
+uvicorn app.hk_calibration_app:app --reload
+```
+
+**Open in browser:** `http://localhost:8000` → `app/hk_calibration_app.html`
+
+**Layout:** Camera stream on the left, all controls grouped on the right:
+
+1. **Detection** – toggle red dot detection on live feed; displays detected center
+2. **Direct Galvo Control** – move galvo by coordinate or arrow buttons with adjustable step
+3. **Calibration Collection** – gather image↔galvo point pairs, then click "Calculate & Save Homography" to compute and persist the transformation matrix
+4. **Homography Test** – click anywhere on the video; the app uses the saved homography to transform the image coordinate to galvo coordinate and moves the beam there
+
+After calibration, use the "Reload Homography" button to reload the matrix from disk if you've run a new calibration.
+
+---
+
+### 🚀 Hair Detection & Galvo Walk App
+
+A full workflow for automated hair removal using YOLO follicle detection:
+
+**Start the server:**
+```bash
+source yolo_venv/bin/activate
+uvicorn app.hk_hair_walk_app:app --reload
+```
+
+**Open in browser:** `http://localhost:8000` → `app/hk_hair_walk_app.html`
+
+**Workflow:**
+
+1. **Enable detection overlay** – toggle the checkbox to see detected follicles drawn on the live video
+2. **Capture frame** – click "Capture Frame" to run inference on the current frame, detect all follicles, and collect their image coordinates
+3. **Review collected points** – the list shows all detected follicle coordinates
+4. **Start walking** – click "Start Walking" to:
+   - Transform all image coordinates to galvo coordinates using the saved homography
+   - Optimize the visit order using nearest-neighbor TSP
+   - Galvo visits each point in sequence with the optimized path
+5. **Monitor progress** – the status log and galvo position display show real-time updates
+
+Requires a saved `transformation_matrix.txt` from prior calibration.
+
+---
+
+### 🔥 Full Hair Removal Control App (`hk_full_app`)
+
+Complete hair removal system with laser firing, detection, and automated galvo sequencing:
+
+**Start the server:**
+```bash
+source yolo_venv/bin/activate
+uvicorn app.hk_full_app:app --reload
+```
+
+**Open in browser:** `http://localhost:8000` → `app/hk_full_app.html`
+
+**Features:**
+
+**Detection & Galvo:**
+- Live detection overlay with configurable confidence slider
+- Capture follicles from current frame into a point list
+- Auto-walk: move galvo through detected points in optimized order (nearest-neighbor TSP)
+- Visual crosshair on target position during walking
+
+**Laser Safety & Control:**
+- ARM/DISARM laser with hardware checks
+- Acknowledge errors
+- Select active wavelengths (1064, 980, 808, 660 nm)
+- Set laser current (power %, 1-100)
+- Set pulse duration (1-1000 ms)
+
+**Sequence & Firing:**
+- Configure sequence length (1-256 points)
+- Set target coordinates per point
+- START_SEQ (live firing with hardware checks)
+- START_SEQ_TEST (test mode, no safety checks)
+- HALT, RESUME, STOP sequence controls
+
+**🔥 Fire Hair Removal Workflow:**
+1. Set all laser parameters (active lasers, current, pulse)
+2. Capture detection points from video
+3. Click **Fire TEST** to dry-run the sequence
+4. Click **Fire LIVE** (with confirmation) to actually fire at all detected points:
+   - Auto-transforms image coords to galvo coords via homography
+   - Auto-sets target points in firmware sequence
+   - Auto-configures sequence length
+   - Fires the sequence
+
+**Serial Protocol:** Communicates with hardware via `/dev/ttyACM0` at 115200 baud using commands from `README_serial.md`.
+
+Requires: `transformation_matrix.txt` from prior calibration.
+
+---
+
 🔌 Serial Port Support
 pip install pyserial
 

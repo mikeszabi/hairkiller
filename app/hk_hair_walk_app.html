@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>HK Hair Walk App</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { 
+      font-family: sans-serif; 
+      background: #222; 
+      color: #eee; 
+      padding: 10px; 
+      margin: 0;
+    }
+    h1 { color: #0f0; margin-top: 0; }
+    h2 { color: #0f0; font-size: 14px; margin: 12px 0 8px 0; border-bottom: 1px solid #0f0; padding-bottom: 4px; }
+    
+    #container {
+      display: flex;
+      gap: 15px;
+      height: 100vh;
+      padding: 10px;
+    }
+    
+    #left {
+      flex: 0 0 60%;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    #right {
+      flex: 1;
+      overflow-y: auto;
+      padding-right: 10px;
+    }
+    
+    #video-container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 2px solid #0f0;
+      background: #000;
+    }
+    
+    img { 
+      max-width: 100%; 
+      max-height: 100%; 
+      display: block;
+    }
+    
+    .panel { 
+      margin-bottom: 15px; 
+      padding: 10px; 
+      background: #333; 
+      border: 1px solid #555;
+      border-radius: 4px;
+    }
+    
+    .panel-title { 
+      font-weight: bold; 
+      color: #0f0; 
+      font-size: 12px;
+      margin: 0 0 8px 0;
+    }
+    
+    button, input[type=number], input[type=checkbox], label { 
+      margin: 4px 2px; 
+      padding: 6px 10px; 
+      font-size: 13px; 
+      background: #444;
+      color: #eee;
+      border: 1px solid #666;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    
+    button:hover { background: #555; }
+    button:active { background: #666; }
+    button:disabled { background: #666; opacity: 0.5; cursor: not-allowed; }
+    
+    input[type=checkbox] { cursor: pointer; width: auto; padding: 4px; }
+    
+    .info-line {
+      margin: 4px 0;
+      font-size: 12px;
+      padding: 4px;
+      background: #222;
+      border-radius: 2px;
+    }
+    
+    .info-label { font-weight: bold; color: #0f0; }
+    
+    .button-group { margin: 6px 0; }
+    
+    .small-button { padding: 4px 8px; font-size: 12px; }
+    
+    .danger-button { background: #8b0000; }
+    .danger-button:hover { background: #a00000; }
+    
+    .success-button { background: #006600; }
+    .success-button:hover { background: #009900; }
+    
+    .points-list {
+      max-height: 200px;
+      overflow-y: auto;
+      background: #222;
+      border: 1px solid #555;
+      border-radius: 2px;
+      padding: 6px;
+      margin: 6px 0;
+      font-size: 11px;
+      font-family: monospace;
+    }
+    
+    .point-entry { 
+      padding: 2px 4px;
+      margin: 2px 0;
+      background: #333;
+      border-radius: 2px;
+    }
+    
+    #right::-webkit-scrollbar {
+      width: 8px;
+    }
+    #right::-webkit-scrollbar-track {
+      background: #222;
+    }
+    #right::-webkit-scrollbar-thumb {
+      background: #666;
+      border-radius: 4px;
+    }
+    #right::-webkit-scrollbar-thumb:hover {
+      background: #888;
+    }
+    
+    .status-badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 11px;
+      font-weight: bold;
+      margin-left: 6px;
+    }
+    
+    .status-idle { background: #888; }
+    .status-walking { background: #00aa00; color: #000; }
+    .status-capturing { background: #aa8800; }
+  </style>
+</head>
+<body>
+  <h1>HK Hair Detection & Galvo Walk</h1>
+  
+  <div id="container">
+    <div id="left">
+      <div id="video-container">
+        <img id="cam" src="http://localhost:8000/frame/current" alt="camera stream" />
+      </div>
+    </div>
+    
+    <div id="right">
+      
+      <!-- Detection Panel -->
+      <div class="panel">
+        <div class="panel-title">Hair Detection <span id="detStatus" class="status-badge status-idle">OFF</span></div>
+        <label>
+          <input id="detectionToggle" type="checkbox" onchange="toggleDetection()"> 
+          Enable live detection overlay
+        </label>
+        <div style="margin-top:8px;">
+          <label class="info-label">Confidence:</label>
+          <input id="confRange" type="range" min="0.01" max="1.0" step="0.01" value="0.10" onchange="onConfChange(this.value)">
+          <span id="confVal">0.10</span>
+        </div>
+      </div>
+      
+      <!-- Galvo Status Panel -->
+      <div class="panel">
+        <div class="panel-title">Galvo Position</div>
+        <div class="info-line">
+          <span class="info-label">Current:</span> X=<span id="galvoX">-</span> Y=<span id="galvoY">-</span>
+        </div>
+      </div>
+      
+      <!-- Capture & Points Panel -->
+      <div class="panel">
+        <div class="panel-title">Detection Capture</div>
+        <div class="info-line">
+          <span class="info-label">Points collected:</span> <span id="pointCount">0</span> <span id="walkStatus" class="status-badge status-idle">READY</span>
+        </div>
+        <div class="button-group">
+          <button onclick="captureDetections()" class="small-button">Capture Frame</button>
+          <button onclick="clearPoints()" class="small-button">Clear</button>
+        </div>
+        <div class="points-list" id="pointsList">
+          <span style="color: #888;">No points captured</span>
+        </div>
+      </div>
+      
+      <!-- Walking Control Panel -->
+      <div class="panel">
+        <div class="panel-title">Hair Removal Walk</div>
+        <div class="button-group">
+          <button onclick="startWalking()" class="small-button success-button" id="walkBtn">Start Walking</button>
+          <button onclick="stopWalking()" class="small-button danger-button" id="stopBtn" disabled>Stop</button>
+        </div>
+        <div style="font-size: 11px; color: #aaa; margin-top: 6px;">
+          Galvo will visit all detected follicles in optimized order using nearest-neighbor path planning.
+        </div>
+      </div>
+      
+      <!-- Log Panel -->
+      <div class="panel">
+        <div class="panel-title">Status Log</div>
+        <div class="points-list" id="logList" style="max-height: 150px;">
+          <span style="color: #888;">Ready</span>
+        </div>
+      </div>
+      
+    </div>
+  </div>
+
+  <script>
+    const API = 'http://localhost:8000';
+    const cam = document.getElementById('cam');
+    
+    let detectionOn = false;
+    let walking = false;
+    
+    function logMsg(msg) {
+      const log = document.getElementById('logList');
+      const entry = document.createElement('div');
+      entry.className = 'point-entry';
+      const time = new Date().toLocaleTimeString();
+      entry.textContent = `[${time}] ${msg}`;
+      log.insertBefore(entry, log.firstChild);
+      if (log.children.length > 30) {
+        log.removeChild(log.lastChild);
+      }
+    }
+    
+    // ==================== Detection ====================
+    async function toggleDetection() {
+      const checked = document.getElementById('detectionToggle').checked;
+      try {
+        const res = await fetch(`${API}/detection/toggle?enabled=${checked}`, {method: 'POST'});
+        const data = await res.json();
+        detectionOn = checked;
+        document.getElementById('detStatus').textContent = checked ? 'ON' : 'OFF';
+        document.getElementById('detStatus').className = 'status-badge ' + (checked ? 'status-capturing' : 'status-idle');
+        logMsg(`Detection ${checked ? 'enabled' : 'disabled'}`);
+        // update slider display from returned conf
+        if (data && data.conf !== undefined) {
+          document.getElementById('confVal').textContent = Number(data.conf).toFixed(2);
+          document.getElementById('confRange').value = Number(data.conf).toFixed(2);
+        }
+      } catch (err) {
+        logMsg(`Error toggling detection: ${err}`);
+      }
+    }
+    
+    // ==================== Galvo Status ====================
+    async function updateGalvoDisplay() {
+      try {
+        const res = await fetch(`${API}/mover/pos`);
+        const data = await res.json();
+        document.getElementById('galvoX').textContent = data.x !== null ? data.x : 'ERR';
+        document.getElementById('galvoY').textContent = data.y !== null ? data.y : 'ERR';
+      } catch (err) {
+        console.error("Error fetching galvo pos:", err);
+      }
+    }
+    
+    setInterval(updateGalvoDisplay, 500);
+    
+    // ==================== Point Capture ====================
+    async function captureDetections() {
+      logMsg('Capturing detections...');
+      try {
+        const res = await fetch(`${API}/detection/capture`, {method: 'POST'});
+        const data = await res.json();
+        if (data.error) {
+          logMsg(`Capture error: ${data.error}`);
+          return;
+        }
+        const count = data.captured || 0;
+        document.getElementById('pointCount').textContent = count;
+        logMsg(`Captured ${count} follicles`);
+        updatePointsList(data.points || []);
+      } catch (err) {
+        logMsg(`Capture failed: ${err}`);
+      }
+    }
+
+    async function onConfChange(v) {
+      const val = Number(v);
+      document.getElementById('confVal').textContent = val.toFixed(2);
+      try {
+        const res = await fetch(`${API}/detection/conf?conf=${val}`, { method: 'POST' });
+        const data = await res.json();
+        if (data && data.conf !== undefined) {
+          document.getElementById('confVal').textContent = Number(data.conf).toFixed(2);
+        }
+        logMsg(`Detection confidence set to ${val.toFixed(2)}`);
+      } catch (err) {
+        logMsg(`Failed to set conf: ${err}`);
+      }
+    }
+
+    // initialize detection status and conf on load
+    (async function initDetectionStatus(){
+      try {
+        const res = await fetch(`${API}/detection/status`);
+        const data = await res.json();
+        if (data) {
+          document.getElementById('detectionToggle').checked = !!data.detection_enabled;
+          document.getElementById('detStatus').textContent = data.detection_enabled ? 'ON' : 'OFF';
+          document.getElementById('detStatus').className = 'status-badge ' + (data.detection_enabled ? 'status-capturing' : 'status-idle');
+          if (data.conf !== undefined) {
+            document.getElementById('confVal').textContent = Number(data.conf).toFixed(2);
+            document.getElementById('confRange').value = Number(data.conf).toFixed(2);
+          }
+        }
+      } catch (err) {
+        console.warn('Could not initialize detection status', err);
+      }
+    })();
+    
+    function updatePointsList(points) {
+      const list = document.getElementById('pointsList');
+      if (!points || points.length === 0) {
+        list.innerHTML = '<span style="color: #888;">No points</span>';
+        return;
+      }
+      let html = '';
+      points.forEach((p, i) => {
+        html += `<div class="point-entry">${i+1}. (${p[0]}, ${p[1]})</div>`;
+      });
+      list.innerHTML = html;
+    }
+    
+    async function clearPoints() {
+      try {
+        const res = await fetch(`${API}/points/clear`, {method: 'POST'});
+        const data = await res.json();
+        document.getElementById('pointCount').textContent = '0';
+        updatePointsList([]);
+        logMsg('Points cleared');
+      } catch (err) {
+        logMsg(`Clear failed: ${err}`);
+      }
+    }
+    
+    // ==================== Walking ====================
+    async function startWalking() {
+      if (walking) return;
+      
+      logMsg('Starting walk sequence...');
+      walking = true;
+      document.getElementById('walkBtn').disabled = true;
+      document.getElementById('stopBtn').disabled = false;
+      document.getElementById('walkStatus').textContent = 'WALKING';
+      document.getElementById('walkStatus').className = 'status-badge status-walking';
+      
+      try {
+        const res = await fetch(`${API}/walk/start`, {method: 'POST'});
+        const data = await res.json();
+        if (data.error) {
+          logMsg(`Walk error: ${data.error}`);
+        } else {
+          logMsg(`Walk complete: visited ${data.visited ? data.visited.length : 0} points`);
+        }
+      } catch (err) {
+        logMsg(`Walk failed: ${err}`);
+      }
+      
+      walking = false;
+      document.getElementById('walkBtn').disabled = false;
+      document.getElementById('stopBtn').disabled = true;
+      document.getElementById('walkStatus').textContent = 'READY';
+      document.getElementById('walkStatus').className = 'status-badge status-idle';
+      await updateGalvoDisplay();
+    }
+    
+    async function stopWalking() {
+      logMsg('Stopping walk...');
+      try {
+        const res = await fetch(`${API}/walk/stop`, {method: 'POST'});
+        const data = await res.json();
+        logMsg('Walk stopped');
+      } catch (err) {
+        logMsg(`Stop failed: ${err}`);
+      }
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>HK Full Hair Removal App</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { 
+      font-family: sans-serif; 
+      background: #222; 
+      color: #eee; 
+      padding: 10px; 
+      margin: 0;
+      font-size: 13px;
+    }
+    h1 { color: #0f0; margin: 0 0 10px 0; font-size: 20px; }
+    h2 { 
+      color: #0f0; 
+      font-size: 12px; 
+      margin: 10px 0 6px 0; 
+      border-bottom: 1px solid #0f0; 
+      padding-bottom: 3px; 
+    }
+    
+    #container {
+      display: flex;
+      gap: 10px;
+      height: 100vh;
+    }
+    
+    #left {
+      flex: 0 0 55%;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    #right {
+      flex: 1;
+      overflow-y: auto;
+      padding-right: 8px;
+    }
+    
+    #video-container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 2px solid #0f0;
+      background: #000;
+    }
+    
+    img { 
+      max-width: 100%; 
+      max-height: 100%; 
+      display: block;
+    }
+    
+    .panel { 
+      margin-bottom: 12px; 
+      padding: 8px; 
+      background: #333; 
+      border: 1px solid #555;
+      border-radius: 3px;
+    }
+    
+    button, input[type=number], input[type=checkbox], input[type=range], label { 
+      margin: 2px 1px; 
+      padding: 4px 8px; 
+      font-size: 12px; 
+      background: #444;
+      color: #eee;
+      border: 1px solid #666;
+      border-radius: 2px;
+      cursor: pointer;
+    }
+    
+    button:hover { background: #555; }
+    button:active { background: #666; }
+    button:disabled { background: #666; opacity: 0.5; cursor: not-allowed; }
+    
+    input[type=checkbox] { cursor: pointer; width: auto; }
+    input[type=range] { width: 60px; vertical-align: middle; }
+    input[type=number] { width: 60px; padding: 3px; }
+    
+    .info-line {
+      margin: 3px 0;
+      font-size: 11px;
+      padding: 3px 4px;
+      background: #222;
+      border-radius: 2px;
+    }
+    
+    .info-label { font-weight: bold; color: #0f0; }
+    
+    .small-btn { padding: 3px 6px; font-size: 11px; }
+    
+    .danger-btn { background: #8b0000; }
+    .danger-btn:hover { background: #a00000; }
+    
+    .success-btn { background: #006600; }
+    .success-btn:hover { background: #009900; }
+    
+    .warning-btn { background: #aa6600; }
+    .warning-btn:hover { background: #bb7700; }
+    
+    .points-list {
+      max-height: 120px;
+      overflow-y: auto;
+      background: #222;
+      border: 1px solid #555;
+      border-radius: 2px;
+      padding: 4px;
+      margin: 4px 0;
+      font-size: 10px;
+      font-family: monospace;
+    }
+    
+    .point-entry { 
+      padding: 1px 2px;
+      margin: 1px 0;
+      background: #333;
+      border-radius: 1px;
+    }
+    
+    .status-badge {
+      display: inline-block;
+      padding: 2px 4px;
+      border-radius: 2px;
+      font-size: 10px;
+      font-weight: bold;
+      margin-left: 4px;
+    }
+    
+    .status-idle { background: #888; }
+    .status-active { background: #00aa00; color: #000; }
+    .status-error { background: #aa0000; }
+    
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
+      margin: 4px 0;
+    }
+    
+    .grid-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 3px;
+      margin: 3px 0;
+    }
+    
+    #right::-webkit-scrollbar {
+      width: 6px;
+    }
+    #right::-webkit-scrollbar-track {
+      background: #222;
+    }
+    #right::-webkit-scrollbar-thumb {
+      background: #666;
+      border-radius: 3px;
+    }
+    #right::-webkit-scrollbar-thumb:hover {
+      background: #888;
+    }
+    
+    .laser-status { color: #ff4444; font-weight: bold; }
+    .laser-armed { color: #44ff44; font-weight: bold; }
+    
+    textarea {
+      width: 100%;
+      height: 60px;
+      background: #222;
+      color: #0f0;
+      border: 1px solid #555;
+      font-family: monospace;
+      font-size: 10px;
+      padding: 4px;
+      resize: vertical;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔴 Hair Removal System - Full Control</h1>
+  
+  <div id="container">
+    <div id="left">
+      <div id="video-container">
+        <img id="cam" src="http://localhost:8000/frame/current" alt="camera stream" />
+      </div>
+    </div>
+    
+    <div id="right">
+      
+      <!-- Detection Panel -->
+      <div class="panel">
+        <h2>Detection <span id="detStatus" class="status-badge status-idle">OFF</span></h2>
+        <label>
+          <input id="detectionToggle" type="checkbox" onchange="toggleDetection()"> 
+          Enable detection
+        </label>
+        <div style="margin-top:4px;">
+          <label class="info-label">Confidence:</label>
+          <input id="confRange" type="range" min="0.01" max="1.0" step="0.01" value="0.10" onchange="onConfChange(this.value)">
+          <span id="confVal">0.10</span>
+        </div>
+      </div>
+      
+      <!-- Galvo & Points -->
+      <div class="panel">
+        <h2>Galvo & Detection</h2>
+        <div class="info-line">
+          <span class="info-label">Position:</span> X=<span id="galvoX">-</span> Y=<span id="galvoY">-</span>
+        </div>
+        <div class="info-line">
+          <span class="info-label">Points:</span> <span id="pointCount">0</span>
+        </div>
+        <div class="grid-2">
+          <button onclick="captureDetections()" class="small-btn">Capture</button>
+          <button onclick="clearPoints()" class="small-btn">Clear</button>
+        </div>
+        <div class="points-list" id="pointsList">
+          <span style="color: #888;">No points</span>
+        </div>
+      </div>
+      
+      <!-- Walking Control -->
+      <div class="panel">
+        <h2>📍 Galvo Walk</h2>
+        <div class="grid-2">
+          <button onclick="startWalking()" class="small-btn success-btn">Start Walk</button>
+          <button onclick="stopWalking()" class="small-btn danger-btn" disabled id="walkStopBtn">Stop</button>
+        </div>
+      </div>
+      
+      <!-- Laser Safety -->
+      <div class="panel">
+        <h2>⚡ Laser Safety</h2>
+        <div class="info-line">
+          Status: <span id="laserStatus" class="laser-status">DISARMED</span>
+        </div>
+        <div class="grid-2">
+          <button onclick="armLaser()" class="small-btn success-btn">ARM</button>
+          <button onclick="disarmLaser()" class="small-btn danger-btn">DISARM</button>
+        </div>
+        <button onclick="ackErrors()" class="small-btn warning-btn" style="width:100%;">ACK Errors</button>
+      </div>
+      
+      <!-- Laser Settings -->
+      <div class="panel">
+        <h2>⚙️ Laser Settings</h2>
+        
+        <div style="margin: 4px 0;">
+          <label class="info-label">Active Lasers (1064,980,808,660):</label>
+        </div>
+        <div class="grid-2">
+          <label><input type="checkbox" id="l1064" checked> 1064nm</label>
+          <label><input type="checkbox" id="l980" checked> 980nm</label>
+        </div>
+        <div class="grid-2">
+          <label><input type="checkbox" id="l808" checked> 808nm</label>
+          <label><input type="checkbox" id="l660"> 660nm</label>
+        </div>
+        <button onclick="setActiveLasers()" class="small-btn" style="width:100%;">Apply</button>
+        
+        <div style="margin-top: 6px;">
+          <label class="info-label">Current (1-100):</label>
+          <div class="grid-2">
+            <input id="lasCurr" type="number" min="1" max="100" value="50">
+            <button onclick="setLasCurr()" class="small-btn">Set</button>
+          </div>
+        </div>
+        
+        <div style="margin-top: 6px;">
+          <label class="info-label">Pulse (1-1000 ms):</label>
+          <div class="grid-2">
+            <input id="lasPulse" type="number" min="1" max="1000" value="100">
+            <button onclick="setLasPulse()" class="small-btn">Set</button>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Sequence Control -->
+      <div class="panel">
+        <h2>🎯 Sequence Control</h2>
+        
+        <div style="margin: 4px 0;">
+          <label class="info-label">Seq Length (1-256):</label>
+          <div class="grid-2">
+            <input id="seqLen" type="number" min="1" max="256" value="1">
+            <button onclick="setSeqLength()" class="small-btn">Set</button>
+          </div>
+        </div>
+        
+        <div class="grid-3">
+          <button onclick="startSeq()" class="small-btn success-btn">START</button>
+          <button onclick="startSeqTest()" class="small-btn warning-btn">TEST</button>
+          <button onclick="stopSeq()" class="small-btn danger-btn">STOP</button>
+        </div>
+        
+        <div class="grid-3">
+          <button onclick="haltSeq()" class="small-btn" style="background:#666;">HALT</button>
+          <button onclick="resumeSeq()" class="small-btn" style="background:#666;">RESUME</button>
+          <span></span>
+        </div>
+      </div>
+      
+      <!-- Fire Walk -->
+      <div class="panel">
+        <h2>🔥 Fire Hair Removal</h2>
+        <p style="margin: 3px 0; font-size: 11px; color: #aaa;">
+          Converts detected points to galvo targets and fires sequence.
+        </p>
+        <div class="grid-2">
+          <button onclick="fireWalkTest()" class="small-btn warning-btn">Fire TEST</button>
+          <button onclick="fireWalkLive()" class="small-btn danger-btn">Fire LIVE</button>
+        </div>
+      </div>
+      
+      <!-- Status Log -->
+      <div class="panel">
+        <h2>📋 Log</h2>
+        <textarea id="logArea" readonly></textarea>
+      </div>
+      
+    </div>
+  </div>
+
+  <script>
+    const API = 'http://localhost:8000';
+    const cam = document.getElementById('cam');
+    let detectionOn = false;
+    let walking = false;
+    
+    function log(msg) {
+      const log = document.getElementById('logArea');
+      const time = new Date().toLocaleTimeString();
+      log.value = `[${time}] ${msg}\n` + log.value.split('\n').slice(0, 20).join('\n');
+    }
+    
+    function updateLog(msg) {
+      console.log(msg);
+      log(msg);
+    }
+    
+    // ==================== Galvo ====================
+    async function updateGalvoDisplay() {
+      try {
+        const res = await fetch(`${API}/mover/pos`);
+        const data = await res.json();
+        document.getElementById('galvoX').textContent = data.x || '-';
+        document.getElementById('galvoY').textContent = data.y || '-';
+      } catch (err) {
+        console.error("Error fetching galvo pos:", err);
+      }
+    }
+    setInterval(updateGalvoDisplay, 500);
+    
+    // ==================== Detection ====================
+    async function toggleDetection() {
+      const checked = document.getElementById('detectionToggle').checked;
+      try {
+        const res = await fetch(`${API}/detection/toggle?enabled=${checked}`, {method: 'POST'});
+        const data = await res.json();
+        detectionOn = checked;
+        document.getElementById('detStatus').textContent = checked ? 'ON' : 'OFF';
+        document.getElementById('detStatus').className = 'status-badge ' + (checked ? 'status-active' : 'status-idle');
+        updateLog(`Detection ${checked ? 'enabled' : 'disabled'}`);
+      } catch (err) {
+        updateLog(`Error: ${err}`);
+      }
+    }
+    
+    async function onConfChange(v) {
+      const val = Number(v);
+      document.getElementById('confVal').textContent = val.toFixed(2);
+      try {
+        const res = await fetch(`${API}/detection/conf?conf=${val}`, { method: 'POST' });
+        const data = await res.json();
+        if (data && data.conf !== undefined) {
+          document.getElementById('confVal').textContent = Number(data.conf).toFixed(2);
+        }
+      } catch (err) {
+        console.error('conf set failed', err);
+      }
+    }
+    
+    // ==================== Points ====================
+    async function captureDetections() {
+      updateLog('Capturing...');
+      try {
+        const res = await fetch(`${API}/detection/capture`, {method: 'POST'});
+        const data = await res.json();
+        const count = data.captured || 0;
+        document.getElementById('pointCount').textContent = count;
+        updateLog(`Captured ${count} points`);
+        updatePointsList(data.points || []);
+      } catch (err) {
+        updateLog(`Capture failed: ${err}`);
+      }
+    }
+    
+    function updatePointsList(points) {
+      const list = document.getElementById('pointsList');
+      if (!points || points.length === 0) {
+        list.innerHTML = '<span style="color: #888;">No points</span>';
+        return;
+      }
+      let html = '';
+      points.forEach((p, i) => {
+        html += `<div class="point-entry">${i+1}. (${p[0]}, ${p[1]})</div>`;
+      });
+      list.innerHTML = html;
+    }
+    
+    async function clearPoints() {
+      try {
+        const res = await fetch(`${API}/points/clear`, {method: 'POST'});
+        document.getElementById('pointCount').textContent = '0';
+        updatePointsList([]);
+        updateLog('Points cleared');
+      } catch (err) {
+        updateLog(`Clear failed: ${err}`);
+      }
+    }
+    
+    // ==================== Walking ====================
+    async function startWalking() {
+      updateLog('Starting walk...');
+      document.getElementById('walkStopBtn').disabled = false;
+      try {
+        const res = await fetch(`${API}/walk/start`, {method: 'POST'});
+        const data = await res.json();
+        if (data.error) {
+          updateLog(`Walk error: ${data.error}`);
+        } else {
+          updateLog(`Walk complete: ${data.visited ? data.visited.length : 0} points`);
+        }
+      } catch (err) {
+        updateLog(`Walk failed: ${err}`);
+      }
+      document.getElementById('walkStopBtn').disabled = true;
+      await updateGalvoDisplay();
+    }
+    
+    async function stopWalking() {
+      updateLog('Stopping walk...');
+      try {
+        await fetch(`${API}/walk/stop`, {method: 'POST'});
+      } catch (err) {
+        updateLog(`Stop failed: ${err}`);
+      }
+    }
+    
+    // ==================== Laser Control ====================
+    async function armLaser() {
+      updateLog('Arming laser...');
+      try {
+        const res = await fetch(`${API}/laser/arm`, {method: 'POST'});
+        const data = await res.json();
+        updateLog(`Arm response: ${data.response.join(' ')}`);
+        document.getElementById('laserStatus').textContent = 'ARMED';
+        document.getElementById('laserStatus').className = 'laser-armed';
+      } catch (err) {
+        updateLog(`Arm failed: ${err}`);
+      }
+    }
+    
+    async function disarmLaser() {
+      updateLog('Disarming laser...');
+      try {
+        const res = await fetch(`${API}/laser/disarm`, {method: 'POST'});
+        const data = await res.json();
+        updateLog(`Disarm response: ${data.response.join(' ')}`);
+        document.getElementById('laserStatus').textContent = 'DISARMED';
+        document.getElementById('laserStatus').className = 'laser-status';
+      } catch (err) {
+        updateLog(`Disarm failed: ${err}`);
+      }
+    }
+    
+    async function ackErrors() {
+      updateLog('Acknowledging errors...');
+      try {
+        const res = await fetch(`${API}/laser/ack`, {method: 'POST'});
+        const data = await res.json();
+        updateLog(`Ack response: ${data.response.join(' ')}`);
+      } catch (err) {
+        updateLog(`Ack failed: ${err}`);
+      }
+    }
+    
+    // ==================== Laser Settings ====================
+    async function setActiveLasers() {
+      const l1064 = document.getElementById('l1064').checked ? 1 : 0;
+      const l980 = document.getElementById('l980').checked ? 1 : 0;
+      const l808 = document.getElementById('l808').checked ? 1 : 0;
+      const l660 = document.getElementById('l660').checked ? 1 : 0;
+      
+      updateLog(`Setting active lasers: ${l1064},${l980},${l808},${l660}`);
+      try {
+        const res = await fetch(`${API}/laser/active?l1064=${l1064}&l980=${l980}&l808=${l808}&l660=${l660}`, {method: 'POST'});
+        const data = await res.json();
+        updateLog(`Response: ${data.response.join(' ')}`);
+      } catch (err) {
+        updateLog(`Failed: ${err}`);
+      }
+    }
+    
+    async function setLasCurr() {
+      const curr = parseInt(document.getElementById('lasCurr').value);
+      updateLog(`Setting laser current: ${curr}%`);
+      try {
+        const res = await fetch(`${API}/laser/current?curr=${curr}`, {method: 'POST'});
+        const data = await res.json();
+        updateLog(`Response: ${data.response.join(' ')}`);
+      } catch (err) {
+        updateLog(`Failed: ${err}`);
+      }
+    }
+    
+    async function setLasPulse() {
+      const pulse = parseInt(document.getElementById('lasPulse').value);
+      updateLog(`Setting laser pulse: ${pulse}ms`);
+      try {
+        const res = await fetch(`${API}/laser/pulse?pulse_ms=${pulse}`, {method: 'POST'});
+        const data = await res.json();
+        updateLog(`Response: ${data.response.join(' ')}`);
+      } catch (err) {
+        updateLog(`Failed: ${err}`);
+      }
+    }
+    
+    // ==================== Sequence ====================
+    async function setSeqLength() {
+      const len = parseInt(document.getElementById('seqLen').value);
+      updateLog(`Setting sequence length: ${len}`);
+      try {
+        const res = await fetch(`${API}/seq/length?length=${len}`, {method: 'POST'});
+        const data = await res.json();
+        updateLog(`Response: ${data.response.join(' ')}`);
+      } catch (err) {
+        updateLog(`Failed: ${err}`);
+      }
+    }
+    
+    async function startSeq() {
+      updateLog('Starting sequence (LIVE)...');
+      try {
+        const res = await fetch(`${API}/seq/start`, {method: 'POST'});
+        const data = await res.json();
+        updateLog(`Response: ${data.response.join(' ')}`);
+      } catch (err) {
+        updateLog(`Failed: ${err}`);
+      }
+    }
+    
+    async function startSeqTest() {
+      updateLog('Starting sequence (TEST)...');
+      try {
+        const res = await fetch(`${API}/seq/start_test`, {method: 'POST'});
+        const data = await res.json();
+        updateLog(`Response: ${data.response.join(' ')}`);
+      } catch (err) {
+        updateLog(`Failed: ${err}`);
+      }
+    }
+    
+    async function stopSeq() {
+      updateLog('Stopping sequence...');
+      try {
+        const res = await fetch(`${API}/seq/stop`, {method: 'POST'});
+        const data = await res.json();
+        updateLog(`Response: ${data.response.join(' ')}`);
+      } catch (err) {
+        updateLog(`Failed: ${err}`);
+      }
+    }
+    
+    async function haltSeq() {
+      updateLog('Halting sequence...');
+      try {
+        const res = await fetch(`${API}/seq/halt`, {method: 'POST'});
+        const data = await res.json();
+        updateLog(`Response: ${data.response.join(' ')}`);
+      } catch (err) {
+        updateLog(`Failed: ${err}`);
+      }
+    }
+    
+    async function resumeSeq() {
+      updateLog('Resuming sequence...');
+      try {
+        const res = await fetch(`${API}/seq/resume`, {method: 'POST'});
+        const data = await res.json();
+        updateLog(`Response: ${data.response.join(' ')}`);
+      } catch (err) {
+        updateLog(`Failed: ${err}`);
+      }
+    }
+    
+    // ==================== Fire Walk ====================
+    async function fireWalkTest() {
+      updateLog('🔥 FIRE WALK (TEST MODE)');
+      try {
+        const res = await fetch(`${API}/fire/walk?test_mode=true`, {method: 'POST'});
+        const data = await res.json();
+        if (data.error) {
+          updateLog(`Error: ${data.error}`);
+        } else {
+          updateLog(`Firing ${data.targets_count} points in TEST mode`);
+        }
+      } catch (err) {
+        updateLog(`Fire failed: ${err}`);
+      }
+    }
+    
+    async function fireWalkLive() {
+      const confirm_val = confirm('⚠️ FIRE LIVE MODE?\n\nThis will ACTUALLY FIRE the laser at all detected points!\n\nContinue?');
+      if (!confirm_val) {
+        updateLog('Fire cancelled');
+        return;
+      }
+      
+      updateLog('🔥 FIRE WALK (LIVE MODE)');
+      try {
+        const res = await fetch(`${API}/fire/walk?test_mode=false`, {method: 'POST'});
+        const data = await res.json();
+        if (data.error) {
+          updateLog(`Error: ${data.error}`);
+        } else {
+          updateLog(`FIRING ${data.targets_count} points in LIVE mode`);
+        }
+      } catch (err) {
+        updateLog(`Fire failed: ${err}`);
+      }
+    }
+    
+    // ==================== Initialization ====================
+    (async function init() {
+      updateLog('App initialized');
+      await updateGalvoDisplay();
+      try {
+        const res = await fetch(`${API}/detection/status`);
+        const data = await res.json();
+        if (data) {
+          document.getElementById('detectionToggle').checked = !!data.detection_enabled;
+          document.getElementById('detStatus').textContent = data.detection_enabled ? 'ON' : 'OFF';
+          document.getElementById('detStatus').className = 'status-badge ' + (data.detection_enabled ? 'status-active' : 'status-idle');
+          if (data.conf !== undefined) {
+            document.getElementById('confVal').textContent = Number(data.conf).toFixed(2);
+            document.getElementById('confRange').value = Number(data.conf).toFixed(2);
+          }
+        }
+      } catch (err) {
+        console.warn('Could not init detection', err);
+      }
+    })();
+  </script>
+</body>
+</html>

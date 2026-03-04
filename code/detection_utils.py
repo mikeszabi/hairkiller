@@ -131,7 +131,7 @@ def merge_predictions(predictions, original_shape, grid_size=(4, 3)):
 # red dot helper
 
 def detect_red_dot(img, hsv_lower1=(45, 10, 180), hsv_upper1=(70, 30, 255),
-                   central_frac=0.5, blur=5):
+                   central_frac=0.75, blur=5):
     """Detect red dot in *img* and return (mask, center).
 
     Parameters

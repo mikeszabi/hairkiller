@@ -8,17 +8,20 @@ sys.path.append(str(Path(__file__).parent.parent / "code"))
 from fastapi import FastAPI, Query
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-import io
 import time
 import cv2
-import numpy as np
 import json
 
 # hardware interfaces
 from camera_handler import UVCInterface
 from detection_utils import detect_red_dot
 from galvo_handler import GalvoInterface
-from calibration_utils import calculate_homography, save_transformation_to_file
+from calibration_utils import (
+    calculate_homography,
+    save_transformation_to_file,
+    read_transformation_from_file,
+    transform_to_mover_coordinates,
+)
 
 # create galvo interface on startup (initializes to 3000,3000)
 _galvo = GalvoInterface(debug=False)
@@ -39,6 +42,15 @@ _uvc = UVCInterface()
 # we already created `_galvo` above using the SerialDevice wrapper
 _calibration_points = []  # list of (image_pt, mover_pt) pairs
 _detection_enabled = False  # toggle for automatic red dot detection on frames
+_homography = None
+
+# attempt to load the homography at startup
+try:
+    _homography = read_transformation_from_file()
+    print("[HOMOGRAPHY] Loaded transformation matrix", flush=True)
+except Exception as e:
+    print("[HOMOGRAPHY] Could not load transformation matrix:", e, flush=True)
+    _homography = None
 
 
 def _generate_camera():
@@ -72,6 +84,17 @@ def _generate_camera():
                b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
         # small delay to avoid hogging CPU
         time.sleep(0.03)
+
+
+@app.post("/homography/reload")
+def reload_homography():
+    """Reload the homography matrix from the transformation file."""
+    global _homography
+    try:
+        _homography = read_transformation_from_file()
+        return {"status": "reloaded"}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 @app.get("/frame/current")
@@ -108,6 +131,22 @@ def move_to(x: int = Query(...), y: int = Query(...)):
     newpos = _galvo.move_2_pos(x, y)
     print(f"[GALVO MOVE] Actual after move: X={newpos[0]}, Y={newpos[1]}", flush=True)
     return {"new_position": newpos}
+
+
+@app.post("/mover/move_image")
+def move_to_image(x: int = Query(...), y: int = Query(...)):
+    """Transform the supplied image coordinates using the loaded homography
+    and move the galvo to the resulting location."""
+    global _homography
+    if _homography is None:
+        return JSONResponse(status_code=500, content={"error": "Homography not available"})
+    # convert pixel coordinate -> mover coordinate
+    mover_coord = transform_to_mover_coordinates((x, y), _homography)
+    tx, ty = int(round(mover_coord[0])), int(round(mover_coord[1]))
+    print(f"[HOMOGRAPHY MOVE] Image ({x},{y}) -> Target ({tx},{ty})", flush=True)
+    newpos = _galvo.move_2_pos(tx, ty)
+    print(f"[HOMOGRAPHY MOVE] Actual: {newpos}", flush=True)
+    return {"image": [x, y], "target": [tx, ty], "new_position": newpos}
 
 
 @app.post("/mover/direction")
