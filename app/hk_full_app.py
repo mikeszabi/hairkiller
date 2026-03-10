@@ -260,6 +260,7 @@ def capture_detections():
         boxes_distinct = remove_overlapping_boxes(boxes_with_scores)
         centers = get_box_centers(boxes_distinct)
         _detected_points = [(int(cx), int(cy)) for cx, cy in centers]
+        #print(f"[CAPTURE] Detected points: {_detected_points}", flush=True)
         
         return {"captured": len(_detected_points), "points": _detected_points}
     except Exception as e:
@@ -412,6 +413,18 @@ def set_seq_length(length: int = Query(...)):
         return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
     resp = _laser.set_seq_length(length)
     return {"response": resp, "length": length}
+
+# helper for front-end: convert image-space point to galvo coordinates
+@app.get("/coords/convert")
+def convert_image_to_galvo(ix: int = Query(...), iy: int = Query(...)):
+    if _homography is None:
+        return JSONResponse(status_code=400, content={"error": "Homography unavailable"})
+    try:
+        galvo_coord = transform_to_mover_coordinates((ix, iy), _homography)
+        tx, ty = int(round(galvo_coord[0])), int(round(galvo_coord[1]))
+        return {"x": tx, "y": ty}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 @app.post("/seq/target")

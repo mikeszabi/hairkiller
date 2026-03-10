@@ -42,11 +42,31 @@
     
     #video-container {
       flex: 1;
+      position: relative;
       display: flex;
       align-items: center;
       justify-content: center;
       border: 2px solid #0f0;
       background: #000;
+    }
+    #crosshair {
+      position: absolute;
+      pointer-events: none;
+      display: none;
+      width: 0; height: 0;
+    }
+    #crosshair:before, #crosshair:after {
+      content: '';
+      position: absolute;
+      background: #f00;
+    }
+    #crosshair:before {
+      left: -20px; top: 0;
+      width: 40px; height: 2px;
+    }
+    #crosshair:after {
+      top: -20px; left: 0;
+      width: 2px; height: 40px;
     }
     
     img { 
@@ -96,6 +116,7 @@
     
     .danger-btn { background: #8b0000; }
     .danger-btn:hover { background: #a00000; }
+    .emph-btn { font-weight: bold; font-size: 14px; }
     
     .success-btn { background: #006600; }
     .success-btn:hover { background: #009900; }
@@ -186,36 +207,29 @@
     <div id="left">
       <div id="video-container">
         <img id="cam" src="http://localhost:8000/frame/current" alt="camera stream" />
+        <div id="crosshair"></div>
       </div>
     </div>
     
     <div id="right">
       
-      <!-- Detection Panel -->
+      <!-- DETECTION -->
       <div class="panel">
-        <h2>Detection <span id="detStatus" class="status-badge status-idle">OFF</span></h2>
+        <h2>🔍 DETECTION <span id="detStatus" class="status-badge status-idle">OFF</span></h2>
         <label>
           <input id="detectionToggle" type="checkbox" onchange="toggleDetection()"> 
-          Enable detection
+          Detection On/OFF
         </label>
         <div style="margin-top:4px;">
           <label class="info-label">Confidence:</label>
           <input id="confRange" type="range" min="0.01" max="1.0" step="0.01" value="0.10" onchange="onConfChange(this.value)">
           <span id="confVal">0.10</span>
         </div>
-      </div>
-      
-      <!-- Galvo & Points -->
-      <div class="panel">
-        <h2>Galvo & Detection</h2>
-        <div class="info-line">
-          <span class="info-label">Position:</span> X=<span id="galvoX">-</span> Y=<span id="galvoY">-</span>
-        </div>
         <div class="info-line">
           <span class="info-label">Points:</span> <span id="pointCount">0</span>
         </div>
         <div class="grid-2">
-          <button onclick="captureDetections()" class="small-btn">Capture</button>
+          <button onclick="captureDetections()" class="small-btn">Capture POINTS</button>
           <button onclick="clearPoints()" class="small-btn">Clear</button>
         </div>
         <div class="points-list" id="pointsList">
@@ -223,32 +237,32 @@
         </div>
       </div>
       
-      <!-- Walking Control -->
+      <!-- GALVO -->
       <div class="panel">
-        <h2>📍 Galvo Walk</h2>
-        <div class="grid-2">
-          <button onclick="startWalking()" class="small-btn success-btn">Start Walk</button>
-          <button onclick="stopWalking()" class="small-btn danger-btn" disabled id="walkStopBtn">Stop</button>
+        <h2>📍 GALVO</h2>
+        <div class="info-line">
+          <span class="info-label">Position:</span> X=<span id="galvoX">-</span> Y=<span id="galvoY">-</span>
         </div>
+        <button onclick="startWalking()" class="small-btn success-btn">TEST: GALVO TEST WALK</button>
       </div>
       
-      <!-- Laser Safety -->
+      <!-- LASER -->
       <div class="panel">
-        <h2>⚡ Laser Safety</h2>
-        <div class="info-line">
-          Status: <span id="laserStatus" class="laser-status">DISARMED</span>
+        <h2>⚡ LASER</h2>
+        
+        <!-- Safety -->
+        <div style="margin: 4px 0;">
+          <span class="info-label">Safety:</span>
+          <span id="laserStatus" class="laser-status">DISARMED</span>
         </div>
         <div class="grid-2">
           <button onclick="armLaser()" class="small-btn success-btn">ARM</button>
           <button onclick="disarmLaser()" class="small-btn danger-btn">DISARM</button>
         </div>
         <button onclick="ackErrors()" class="small-btn warning-btn" style="width:100%;">ACK Errors</button>
-      </div>
-      
-      <!-- Laser Settings -->
-      <div class="panel">
-        <h2>⚙️ Laser Settings</h2>
         
+        <!-- Laser Settings -->
+        <hr style="border-color:#555;margin:8px 0;" />
         <div style="margin: 4px 0;">
           <label class="info-label">Active Lasers (1064,980,808,660):</label>
         </div>
@@ -277,42 +291,52 @@
             <button onclick="setLasPulse()" class="small-btn">Set</button>
           </div>
         </div>
+        
+        <!-- Fire Manual Target -->
+        <hr style="border-color:#555;margin:8px 0;" />
+        <h3 style="font-size:14px;margin:4px 0;color:#0f0;">Fire Manual Target</h3>
+        <div class="info-line" id="targetInfo">Click on video to choose target</div>
+        <div class="grid-2">
+          <button id="fireTargetBtn" onclick="fireTarget()" class="small-btn danger-btn" disabled>FIRE</button>
+          <label><input type="checkbox" id="fireTestMode"> Test</label>
+        </div>
+        <div class="info-line" id="galvoTargetInfo"></div>
       </div>
       
-      <!-- Sequence Control -->
+      <!-- SEQUENCE -->
       <div class="panel">
-        <h2>🎯 Sequence Control</h2>
+        <h2>🎯 SEQUENCE</h2>
         
+        <!-- Use captured points -->
+        <div class="info-line" style="font-size:11px;color:#aaa;">
+          Use captured points for sequenced firing.
+        </div>
+        <div class="grid-2">
+          <button onclick="fireWalkTest()" class="small-btn warning-btn">Walk TEST</button>
+          <button onclick="fireWalkLive()" class="small-btn success-btn">Walk LIVE</button>
+        </div>
+        
+        <!-- START/STOP/HALT -->
+        <!-- <hr style="border-color:#555;margin:8px 0;" />
         <div style="margin: 4px 0;">
           <label class="info-label">Seq Length (1-256):</label>
           <div class="grid-2">
-            <input id="seqLen" type="number" min="1" max="256" value="1">
+            <input id="seqLen" type="number" min="1" max="256" value="1" readonly>
             <button onclick="setSeqLength()" class="small-btn">Set</button>
           </div>
-        </div>
+        </div> -->
+        
+        <!-- <div class="grid-3">
+          <button onclick="startSeqTest()" class="small-btn warning-btn">START TEST</button>
+          <button onclick="startSeq()" class="small-btn success-btn">START LIVE</button>
+          <button onclick="stopSeq()" class="small-btn danger-btn emph-btn">STOP</button>
+        </div> -->
         
         <div class="grid-3">
-          <button onclick="startSeq()" class="small-btn success-btn">START</button>
-          <button onclick="startSeqTest()" class="small-btn warning-btn">TEST</button>
-          <button onclick="stopSeq()" class="small-btn danger-btn">STOP</button>
-        </div>
-        
-        <div class="grid-3">
-          <button onclick="haltSeq()" class="small-btn" style="background:#666;">HALT</button>
-          <button onclick="resumeSeq()" class="small-btn" style="background:#666;">RESUME</button>
+          <button onclick="stopSeq()" class="small-btn danger-btn emph-btn">STOP</button>
+          <button onclick="haltSeq()" class="small-btn warning-btn emph-btn">HALT</button>
+          <button onclick="resumeSeq()" class="small-btn success-btn emph-btn">RESUME</button>
           <span></span>
-        </div>
-      </div>
-      
-      <!-- Fire Walk -->
-      <div class="panel">
-        <h2>🔥 Fire Hair Removal</h2>
-        <p style="margin: 3px 0; font-size: 11px; color: #aaa;">
-          Converts detected points to galvo targets and fires sequence.
-        </p>
-        <div class="grid-2">
-          <button onclick="fireWalkTest()" class="small-btn warning-btn">Fire TEST</button>
-          <button onclick="fireWalkLive()" class="small-btn danger-btn">Fire LIVE</button>
         </div>
       </div>
       
@@ -330,6 +354,7 @@
     const cam = document.getElementById('cam');
     let detectionOn = false;
     let walking = false;
+    let isLaserArmed = false;
     
     function log(msg) {
       const log = document.getElementById('logArea');
@@ -392,6 +417,17 @@
         const data = await res.json();
         const count = data.captured || 0;
         document.getElementById('pointCount').textContent = count;
+        // automatically sync seq length to number of points
+        // document.getElementById('seqLen').value = count;
+        // also tell backend about the length immediately
+        if (count > 0) {
+          try {
+            await fetch(`${API}/seq/length?length=${count}`, {method: 'POST'});
+            updateLog(`Server sequence length set to ${count}`);
+          } catch (e) {
+            updateLog(`Failed to auto-set seq length: ${e}`);
+          }
+        }
         updateLog(`Captured ${count} points`);
         updatePointsList(data.points || []);
       } catch (err) {
@@ -426,7 +462,6 @@
     // ==================== Walking ====================
     async function startWalking() {
       updateLog('Starting walk...');
-      document.getElementById('walkStopBtn').disabled = false;
       try {
         const res = await fetch(`${API}/walk/start`, {method: 'POST'});
         const data = await res.json();
@@ -438,7 +473,6 @@
       } catch (err) {
         updateLog(`Walk failed: ${err}`);
       }
-      document.getElementById('walkStopBtn').disabled = true;
       await updateGalvoDisplay();
     }
     
@@ -460,6 +494,7 @@
         updateLog(`Arm response: ${data.response.join(' ')}`);
         document.getElementById('laserStatus').textContent = 'ARMED';
         document.getElementById('laserStatus').className = 'laser-armed';
+        isLaserArmed = true;
       } catch (err) {
         updateLog(`Arm failed: ${err}`);
       }
@@ -473,6 +508,7 @@
         updateLog(`Disarm response: ${data.response.join(' ')}`);
         document.getElementById('laserStatus').textContent = 'DISARMED';
         document.getElementById('laserStatus').className = 'laser-status';
+        isLaserArmed = false;
       } catch (err) {
         updateLog(`Disarm failed: ${err}`);
       }
@@ -531,6 +567,71 @@
     }
     
     // ==================== Sequence ====================
+
+    // ==================== Target click/conversion ====================
+    let targetImagePt = null;
+    let targetGalvoPt = null;
+
+    function onVideoClick(evt) {
+      const img = evt.target;
+      const rect = img.getBoundingClientRect();
+      const ix = Math.round((evt.clientX - rect.left) * (img.naturalWidth / rect.width));
+      const iy = Math.round((evt.clientY - rect.top) * (img.naturalHeight / rect.height));
+      targetImagePt = [ix, iy];
+
+      // move crosshair
+      const ch = document.getElementById('crosshair');
+      ch.style.left = (evt.clientX - rect.left) + 'px';
+      ch.style.top = (evt.clientY - rect.top) + 'px';
+      ch.style.display = 'block';
+
+      document.getElementById('targetInfo').textContent = `Image point (${ix},${iy})`;
+      document.getElementById('galvoTargetInfo').textContent = '';
+      document.getElementById('fireTargetBtn').disabled = true;
+
+      // ask server to convert to galvo
+      fetch(`${API}/coords/convert?ix=${ix}&iy=${iy}`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.error) {
+            updateLog(`Convert error: ${data.error}`);
+          } else {
+            targetGalvoPt = [data.x, data.y];
+            document.getElementById('galvoTargetInfo').textContent = `Galvo (${data.x},${data.y})`;
+            document.getElementById('fireTargetBtn').disabled = false;
+          }
+        })
+        .catch(err => updateLog(`Conversion failed: ${err}`));
+    }
+
+    async function fireTarget() {
+      if (!targetGalvoPt) return;
+      const test = document.getElementById('fireTestMode').checked;
+      if (!isLaserArmed) {
+        updateLog(`Laser not armed, moving galvo to ${targetGalvoPt[0]},${targetGalvoPt[1]} only`);
+        try {
+          await fetch(`${API}/mover/move?x=${targetGalvoPt[0]}&y=${targetGalvoPt[1]}`, {method: 'POST'});
+          updateLog('Galvo moved');
+        } catch (err) {
+          updateLog(`Move failed: ${err}`);
+        }
+        return;
+      }
+      updateLog(`Firing single target at ${targetGalvoPt[0]},${targetGalvoPt[1]} (${test ? 'TEST' : 'LIVE'})`);
+      try {
+        await fetch(`${API}/seq/length?length=1`, {method: 'POST'});
+        await fetch(`${API}/seq/target?idx=0&x=${targetGalvoPt[0]}&y=${targetGalvoPt[1]}`, {method: 'POST'});
+        const url = test ? `${API}/seq/start_test` : `${API}/seq/start`;
+        const res = await fetch(url, {method: 'POST'});
+        const data = await res.json();
+        updateLog(`Response: ${data.response.join(' ')}`);
+      } catch (err) {
+        updateLog(`Fire target failed: ${err}`);
+      }
+    }
+
+    document.getElementById('cam').addEventListener('click', onVideoClick);
+
     async function setSeqLength() {
       const len = parseInt(document.getElementById('seqLen').value);
       updateLog(`Setting sequence length: ${len}`);
@@ -600,6 +701,11 @@
     
     // ==================== Fire Walk ====================
     async function fireWalkTest() {
+      if (!isLaserArmed) {
+        updateLog('Laser not armed, performing galvo walk only');
+        startWalking();
+        return;
+      }
       updateLog('🔥 FIRE WALK (TEST MODE)');
       try {
         const res = await fetch(`${API}/fire/walk?test_mode=true`, {method: 'POST'});
@@ -615,6 +721,11 @@
     }
     
     async function fireWalkLive() {
+      if (!isLaserArmed) {
+        updateLog('Laser not armed, performing galvo walk only');
+        startWalking();
+        return;
+      }
       const confirm_val = confirm('⚠️ FIRE LIVE MODE?\n\nThis will ACTUALLY FIRE the laser at all detected points!\n\nContinue?');
       if (!confirm_val) {
         updateLog('Fire cancelled');
