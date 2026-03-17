@@ -58,12 +58,14 @@ def _generate_camera():
     
     If detection is enabled, draw the detected red dot center on the frame.
     """
+    last_idx = -1
     while True:
         frame, idx = _uvc.read()
         if frame is None:
             time.sleep(0.01)
             continue
-        
+        last_idx = idx
+
         # optionally perform detection and draw on frame
         if _detection_enabled:
             mask, center = detect_red_dot(frame)
@@ -78,12 +80,12 @@ def _generate_camera():
                 # draw white text label
                 cv2.putText(frame, f"({x}, {y})", (x + 35, y - 10),
                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-        
-        _, jpeg = cv2.imencode('.jpg', frame)
+
+        _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
         # small delay to avoid hogging CPU
-        time.sleep(0.03)
+        #time.sleep(0.03)
 
 
 @app.post("/homography/reload")
