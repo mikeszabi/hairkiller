@@ -106,6 +106,10 @@ class LaserControlInterface:
         """RESUME_SEQ"""
         return self._send_cmd("RESUME_SEQ")
 
+    def get_laser_temp(self):
+        """GET_LASER_TEMP"""
+        return self._send_cmd("GET_LASER_TEMP")
+
 # ==================== FastAPI App ====================
 _galvo = GalvoInterface(debug=False)
 _laser = None  # initialized on startup
@@ -396,6 +400,18 @@ def set_las_curr(curr: int = Query(...)):
         return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
     resp = _laser.set_las_curr(curr)
     return {"response": resp, "current": curr}
+
+
+@app.get("/laser/temp")
+def get_laser_temp():
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    resp = _laser.get_laser_temp()
+    raw = resp[0] if isinstance(resp, list) and len(resp) > 0 else str(resp)
+    if raw.startswith("ERR:"):
+        msg = raw[4:].strip()
+        return JSONResponse(status_code=500, content={"error": msg})
+    return {"temp": raw}
 
 
 @app.post("/laser/pulse")
