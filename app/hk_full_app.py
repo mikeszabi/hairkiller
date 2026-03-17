@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import time
 import cv2
 import logging
+import json
 
 from camera_handler import UVCInterface
 from detection_handler import ObjectDetector
@@ -132,6 +133,7 @@ _homography = None
 _walking = False
 _detection_conf = 0.1
 _current_target_image_pt = None
+_last_detection_count = 0
 
 _detector = None
 try:
@@ -157,6 +159,8 @@ except Exception as e:
 
 def _generate_camera():
     """Stream frames with detection overlay and target crosshair."""
+    global _last_detection_count
+    
     while True:
         frame, idx = _uvc.read()
         if frame is None:
@@ -164,12 +168,14 @@ def _generate_camera():
             continue
         
         # Detection overlay
+        current_count = 0
         if _hair_detection_enabled and _detector is not None:
             try:
                 boxes_with_scores = _detector.split_inference(frame, conf=_detection_conf)
                 if len(boxes_with_scores) > 0:
                     boxes_distinct = remove_overlapping_boxes(boxes_with_scores)
                     centers = get_box_centers(boxes_distinct)
+                    current_count = len(centers)
                     
                     for box in boxes_distinct:
                         x1, y1, x2, y2 = [int(v) for v in box[:4]]
@@ -181,6 +187,10 @@ def _generate_camera():
                                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)
             except Exception as e:
                 print(f"[DETECTION] Error: {e}", flush=True)
+        
+        # Update detection count
+        if current_count != _last_detection_count:
+            _last_detection_count = current_count
         
         # Target crosshair
         if _current_target_image_pt is not None:
@@ -202,6 +212,23 @@ def _generate_camera():
 def stream_video():
     return StreamingResponse(_generate_camera(),
                              media_type="multipart/x-mixed-replace; boundary=frame")
+
+
+# ==================== SSE for Detection Count ====================
+@app.get("/sse/detection")
+def sse_detection():
+    """Server-Sent Events endpoint for real-time detection count updates."""
+    def event_stream():
+        last_sent_count = -1
+        while True:
+            current_count = _last_detection_count
+            if current_count != last_sent_count:
+                last_sent_count = current_count
+                data = json.dumps({"type": "detection_count", "count": current_count})
+                yield f"data: {data}\n\n"
+            time.sleep(0.1)  # Check every 100ms
+    
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 # ==================== Galvo Control ====================

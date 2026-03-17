@@ -355,6 +355,50 @@
     let detectionOn = false;
     let walking = false;
     let isLaserArmed = false;
+    let detectionSSE = null;
+    
+    // ==================== SSE for Detection Count ====================
+    function connectDetectionSSE() {
+      if (detectionSSE) {
+        detectionSSE.close();
+      }
+      
+      detectionSSE = new EventSource(`${API}/sse/detection`);
+      
+      detectionSSE.onopen = () => {
+        console.log('[SSE] Connected to detection stream');
+      };
+      
+      detectionSSE.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'detection_count') {
+            updateLiveDetectionCount(data.count);
+          }
+        } catch (err) {
+          console.error('[SSE] Error parsing message:', err);
+        }
+      };
+      
+      detectionSSE.onerror = (error) => {
+        console.error('[SSE] Connection error:', error);
+        detectionSSE.close();
+        console.log('[SSE] Reconnecting in 3s...');
+        setTimeout(connectDetectionSSE, 3000);
+      };
+    }
+    
+    function updateLiveDetectionCount(count) {
+      const liveCountEl = document.getElementById('liveDetectionCount');
+      if (liveCountEl) {
+        liveCountEl.textContent = count;
+        if (count > 0) {
+          liveCountEl.style.color = '#0f0';
+        } else {
+          liveCountEl.style.color = '#888';
+        }
+      }
+    }
     
     function log(msg) {
       const log = document.getElementById('logArea');
@@ -749,6 +793,10 @@
     // ==================== Initialization ====================
     (async function init() {
       updateLog('App initialized');
+      
+      // Connect SSE for live detection count
+      connectDetectionSSE();
+      
       await updateGalvoDisplay();
       try {
         const res = await fetch(`${API}/detection/status`);
