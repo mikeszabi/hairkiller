@@ -138,6 +138,7 @@ _detection_conf = 0.1
 _current_target_image_pt = None
 _last_detection_count = 0
 _cam_frame_window = 0.25 # sec
+_stream_w, _stream_h = 960, 960  # stream output resolution (native is 1920x1920)
 
 # Calibration state
 _calibration_points = []  # list of (image_pt, mover_pt) pairs
@@ -267,7 +268,8 @@ def _generate_camera():
             cv2.putText(frame, "TARGET", (tx + 15, ty - 15),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
         
-        _, jpeg = cv2.imencode('.jpg', frame)
+        small = cv2.resize(frame, (_stream_w, _stream_h))
+        _, jpeg = cv2.imencode('.jpg', small, [cv2.IMWRITE_JPEG_QUALITY, 70])
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
         time.sleep(_cam_frame_window)
@@ -380,10 +382,13 @@ def move_to_image(x: int = Query(...), y: int = Query(...)):
     global _homography
     if _homography is None:
         return JSONResponse(status_code=500, content={"error": "Homography not available"})
-    mover_coord = transform_to_mover_coordinates((x, y), _homography)
+    # Scale stream coords back to native resolution (stream is _stream_w x _stream_h, native is 1920x1920)
+    native_x = int(round(x * 1920 / _stream_w))
+    native_y = int(round(y * 1920 / _stream_h))
+    mover_coord = transform_to_mover_coordinates((native_x, native_y), _homography)
     tx, ty = int(round(mover_coord[0])), int(round(mover_coord[1]))
     newpos = _galvo.move_2_pos(tx, ty)
-    return {"image": [x, y], "target": [tx, ty], "new_position": newpos}
+    return {"image": [x, y], "native_image": [native_x, native_y], "target": [tx, ty], "new_position": newpos}
 
 
 # ==================== Detection ====================
