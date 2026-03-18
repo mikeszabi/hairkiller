@@ -294,6 +294,48 @@ def sse_detection():
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
+@app.get("/sse/galvo_pos")
+def sse_galvo_pos():
+    """Server-Sent Events endpoint for real-time galvo position updates."""
+    def event_stream():
+        last_x, last_y = None, None
+        while True:
+            if _galvo is not None:
+                x, y = _galvo.get_position()
+                if x != last_x or y != last_y:
+                    last_x, last_y = x, y
+                    data = json.dumps({"x": x, "y": y})
+                    yield f"data: {data}\n\n"
+            time.sleep(0.2)  # Check every 200ms
+    
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.get("/sse/dot")
+def sse_dot():
+    """Server-Sent Events endpoint for real-time red dot position updates."""
+    def event_stream():
+        last_x, last_y = None, None
+        while True:
+            frame, _ = _uvc.read()
+            if frame is not None:
+                _, center = detect_red_dot(frame)
+                if center is not None:
+                    x, y = int(center[0]), int(center[1])
+                    if x != last_x or y != last_y:
+                        last_x, last_y = x, y
+                        data = json.dumps({"x": x, "y": y})
+                        yield f"data: {data}\n\n"
+                else:
+                    if last_x is not None or last_y is not None:
+                        last_x, last_y = None, None
+                        data = json.dumps({"x": None, "y": None})
+                        yield f"data: {data}\n\n"
+            time.sleep(0.5)  # Check every 500ms
+    
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
 # ==================== Galvo Control ====================
 @app.get("/mover/pos")
 def get_mover_pos():
