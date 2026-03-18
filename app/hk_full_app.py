@@ -137,6 +137,7 @@ _walking = False
 _detection_conf = 0.1
 _current_target_image_pt = None
 _last_detection_count = 0
+_cam_frame_window = 0.25 # sec
 
 # Calibration state
 _calibration_points = []  # list of (image_pt, mover_pt) pairs
@@ -213,12 +214,14 @@ print("[INFERENCE THREAD] Background worker started", flush=True)
 def _generate_camera():
     """Stream frames with detection overlay and target crosshair."""
     global _last_detection_count
+    last_sent_idx = -1
     
     while True:
         frame, idx = _uvc.read()
-        if frame is None:
+        if frame is None or idx == last_sent_idx:
             time.sleep(0.01)
             continue
+        last_sent_idx = idx
         
         # Hair detection overlay (from cached results)
         current_count = 0
@@ -267,7 +270,7 @@ def _generate_camera():
         _, jpeg = cv2.imencode('.jpg', frame)
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
-        time.sleep(0.03)
+        time.sleep(_cam_frame_window)
 
 
 # ==================== Video Stream ====================

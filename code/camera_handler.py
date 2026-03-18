@@ -48,7 +48,7 @@ def open_cam():
     cap.set(cv2.CAP_PROP_FPS, FPS)
 
     # gyakran segít, hogy ne álljon bent sok régi frame:
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 2)
     cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 3)
 
     # Disable auto-exposure so the camera cannot pick exposure times > 1/FPS.
