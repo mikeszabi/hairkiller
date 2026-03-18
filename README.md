@@ -249,6 +249,17 @@ pip install pyserial
 
 ls -l /dev/ttyUSB* /dev/ttyACM* /dev/ttyTHS* 2>/dev/null || true
 
+⚡ TurboJPEG (Fast JPEG Encoding)
+
+Install system library:
+sudo apt-get install -y libturbojpeg
+
+Install Python wrapper (version 1.7.5 for libjpeg-turbo 2.x compatibility):
+pip install 'PyTurboJPEG==1.7.5'
+
+⚠ Note: PyTurboJPEG 2.x requires libjpeg-turbo 3.0+, which is not available in Ubuntu 22.04 repos.
+Use version 1.7.5 for compatibility with the system libturbojpeg package.
+
 🧠 Summary of Critical Jetson Rules
 
 Use NVIDIA torch wheels only

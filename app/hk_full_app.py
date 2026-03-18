@@ -11,6 +11,7 @@ import time
 import cv2
 import logging
 import json
+from turbojpeg import TurboJPEG
 
 from camera_handler import UVCInterface
 from detection_handler import ObjectDetector
@@ -139,6 +140,7 @@ _current_target_image_pt = None
 _last_detection_count = 0
 _cam_frame_window = 0.25 # sec
 _stream_w, _stream_h = 960, 960  # stream output resolution (native is 1920x1920)
+_turbo = TurboJPEG()
 
 # Calibration state
 _calibration_points = []  # list of (image_pt, mover_pt) pairs
@@ -269,9 +271,8 @@ def _generate_camera():
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
         
         small = cv2.resize(frame, (_stream_w, _stream_h))
-        _, jpeg = cv2.imencode('.jpg', small, [cv2.IMWRITE_JPEG_QUALITY, 70])
-        yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
+        buf = _turbo.encode(small, quality=70)
+        yield b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + buf + b'\r\n'
         time.sleep(_cam_frame_window)
 
 
