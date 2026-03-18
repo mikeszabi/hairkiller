@@ -32,7 +32,7 @@ class ObjectDetector:
         def simple_inference(self, image, conf=0.05):
             # Run inference on a single image, resolution is 640x640
             with torch.no_grad():
-                results = self.model(image, conf=conf)
+                results = self.model(image, conf=conf, verbose=False)
             results_cpu = results[0].cpu()
             boxes_with_scores = results_cpu.boxes
             return boxes_with_scores.data.numpy()
@@ -41,14 +41,14 @@ class ObjectDetector:
             # large images are split into smaller (640x604) tiles, then batch processed
              # Split image into grid
             tiles, original_shape, grid_size = split_image(image)
-            logging.info(f"Split into {len(tiles)} tiles.")
+            #logging.info(f"Split into {len(tiles)} tiles.")
 
             # --- Preprocess tiles into batch tensor ---
             tile_batch = preprocess_tiles(tiles)
 
             # --- Inference in batch ---
             with torch.no_grad():
-                results = self.model(tile_batch, conf=conf)
+                results = self.model(tile_batch, conf=conf, verbose=False)
 
             # # Run inference on all tiles
             # results = []
