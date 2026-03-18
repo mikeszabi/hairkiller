@@ -14,13 +14,16 @@ import json
 
 from camera_handler import UVCInterface
 from detection_handler import ObjectDetector
-from detection_utils import remove_overlapping_boxes, get_box_centers
+from detection_utils import remove_overlapping_boxes, get_box_centers, detect_red_dot
 from galvo_handler import GalvoInterface
 from calibration_utils import (
     read_transformation_from_file,
     transform_to_mover_coordinates,
+    calculate_homography,
+    save_transformation_to_file,
 )
 from serial_devices_handler import SerialDevice
+import threading
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -135,6 +138,15 @@ _detection_conf = 0.1
 _current_target_image_pt = None
 _last_detection_count = 0
 
+# Calibration state
+_calibration_points = []  # list of (image_pt, mover_pt) pairs
+_red_dot_detection_enabled = False  # toggle for red dot overlay
+
+# Background inference optimization
+_inference_cache = None
+_inference_lock = threading.Lock()
+_inference_thread = None
+
 _detector = None
 try:
     _detector = ObjectDetector("./model/follicle_exit_v11i_yolov8n_20250513.pt", device="cuda")
@@ -157,6 +169,47 @@ except Exception as e:
     _laser = None
 
 
+def _background_inference_worker():
+    """Background thread that continuously runs YOLO inference and updates cache."""
+    global _inference_cache
+    print("[INFERENCE THREAD] Started", flush=True)
+    
+    while True:
+        if not _hair_detection_enabled or _detector is None:
+            time.sleep(0.1)
+            continue
+        
+        frame, _ = _uvc.read()
+        if frame is None:
+            time.sleep(0.01)
+            continue
+        
+        try:
+            boxes_with_scores = _detector.split_inference(frame, conf=_detection_conf)
+            if len(boxes_with_scores) > 0:
+                boxes_distinct = remove_overlapping_boxes(boxes_with_scores)
+                centers = get_box_centers(boxes_distinct)
+                
+                with _inference_lock:
+                    _inference_cache = {
+                        'boxes': boxes_distinct,
+                        'centers': centers,
+                        'count': len(centers)
+                    }
+            else:
+                with _inference_lock:
+                    _inference_cache = {'boxes': [], 'centers': [], 'count': 0}
+        except Exception as e:
+            print(f"[INFERENCE THREAD] Error: {e}", flush=True)
+            time.sleep(0.1)
+
+
+# Start background inference thread
+_inference_thread = threading.Thread(target=_background_inference_worker, daemon=True)
+_inference_thread.start()
+print("[INFERENCE THREAD] Background worker started", flush=True)
+
+
 def _generate_camera():
     """Stream frames with detection overlay and target crosshair."""
     global _last_detection_count
@@ -167,26 +220,36 @@ def _generate_camera():
             time.sleep(0.01)
             continue
         
-        # Detection overlay
+        # Hair detection overlay (from cached results)
         current_count = 0
-        if _hair_detection_enabled and _detector is not None:
+        if _hair_detection_enabled:
+            with _inference_lock:
+                cache = _inference_cache
+            
+            if cache is not None:
+                current_count = cache['count']
+                for box in cache['boxes']:
+                    x1, y1, x2, y2 = [int(v) for v in box[:4]]
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                
+                for cx, cy in cache['centers']:
+                    cv2.circle(frame, (int(cx), int(cy)), 5, (0, 255, 255), -1)
+                    cv2.putText(frame, f"({int(cx)},{int(cy)})", (int(cx)+10, int(cy)-10),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)
+        
+        # Red dot detection overlay (for calibration)
+        if _red_dot_detection_enabled:
             try:
-                boxes_with_scores = _detector.split_inference(frame, conf=_detection_conf)
-                if len(boxes_with_scores) > 0:
-                    boxes_distinct = remove_overlapping_boxes(boxes_with_scores)
-                    centers = get_box_centers(boxes_distinct)
-                    current_count = len(centers)
-                    
-                    for box in boxes_distinct:
-                        x1, y1, x2, y2 = [int(v) for v in box[:4]]
-                        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                    
-                    for cx, cy in centers:
-                        cv2.circle(frame, (int(cx), int(cy)), 5, (0, 255, 255), -1)
-                        cv2.putText(frame, f"({int(cx)},{int(cy)})", (int(cx)+10, int(cy)-10),
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)
+                _, center = detect_red_dot(frame)
+                if center is not None:
+                    x, y = center
+                    cv2.circle(frame, (x, y), 25, (255, 0, 255), 3)
+                    cv2.line(frame, (x - 30, y), (x + 30, y), (0, 255, 255), 2)
+                    cv2.line(frame, (x, y - 30), (x, y + 30), (0, 255, 255), 2)
+                    cv2.putText(frame, f"({x}, {y})", (x + 35, y - 10),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
             except Exception as e:
-                print(f"[DETECTION] Error: {e}", flush=True)
+                print(f"[RED DOT] Error: {e}", flush=True)
         
         # Update detection count
         if current_count != _last_detection_count:
@@ -246,6 +309,36 @@ def move_to(x: int = Query(...), y: int = Query(...)):
         return JSONResponse(status_code=500, content={"error": "Galvo unavailable"})
     newpos = _galvo.move_2_pos(x, y)
     return {"new_position": newpos}
+
+
+@app.post("/mover/direction")
+def move_direction(direction: str = Query(...), step: int = Query(25)):
+    if _galvo is None:
+        return JSONResponse(status_code=500, content={"error": "Galvo unavailable"})
+    x, y = _galvo.get_position()
+    if direction == "up":
+        y -= step
+    elif direction == "down":
+        y += step
+    elif direction == "left":
+        x -= step
+    elif direction == "right":
+        x += step
+    newpos = _galvo.move_2_pos(x, y)
+    return {"new_position": newpos}
+
+
+@app.post("/mover/move_image")
+def move_to_image(x: int = Query(...), y: int = Query(...)):
+    """Transform the supplied image coordinates using the loaded homography
+    and move the galvo to the resulting location."""
+    global _homography
+    if _homography is None:
+        return JSONResponse(status_code=500, content={"error": "Homography not available"})
+    mover_coord = transform_to_mover_coordinates((x, y), _homography)
+    tx, ty = int(round(mover_coord[0])), int(round(mover_coord[1]))
+    newpos = _galvo.move_2_pos(tx, ty)
+    return {"image": [x, y], "target": [tx, ty], "new_position": newpos}
 
 
 # ==================== Detection ====================
@@ -308,6 +401,89 @@ def clear_detected_points():
     global _detected_points
     _detected_points = []
     return {"status": "cleared"}
+
+
+# ==================== Calibration ====================
+@app.get("/dot")
+def read_dot():
+    """Get red dot position from current frame."""
+    frame, _ = _uvc.read()
+    if frame is None:
+        return {"x": None, "y": None}
+    _, center = detect_red_dot(frame)
+    if center is None:
+        return {"x": None, "y": None}
+    return {"x": int(center[0]), "y": int(center[1])}
+
+
+@app.post("/calibration/detection/toggle")
+def toggle_red_dot_detection(enabled: bool = Query(...)):
+    """Toggle red dot detection overlay (for calibration)."""
+    global _red_dot_detection_enabled
+    _red_dot_detection_enabled = enabled
+    return {"red_dot_detection_enabled": _red_dot_detection_enabled}
+
+
+@app.get("/calibration/detection/status")
+def get_red_dot_detection_status():
+    return {"red_dot_detection_enabled": _red_dot_detection_enabled}
+
+
+@app.post("/calibration/start")
+def start_calibration():
+    """Clear calibration points to start fresh."""
+    _calibration_points.clear()
+    return {"status": "started"}
+
+
+@app.post("/calibration/store")
+def store_calibration_point():
+    """Store current red dot position + galvo position as calibration pair."""
+    frame, _ = _uvc.read()
+    pos = _galvo.get_position() if _galvo is not None else (None, None)
+    center = None
+    if frame is not None:
+        _, center = detect_red_dot(frame)
+    if center is not None and pos is not None:
+        _calibration_points.append(((int(center[0]), int(center[1])), (pos[0], pos[1])))
+        print(f"[CALIB STORE] Point #{len(_calibration_points)}: Image=({int(center[0])}, {int(center[1])})  Galvo=({pos[0]}, {pos[1]})", flush=True)
+    else:
+        print(f"[CALIB STORE] FAILED - Center={center}, Pos={pos}", flush=True)
+    return {"stored": len(_calibration_points)}
+
+
+@app.get("/calibration/points")
+def get_calibration_points():
+    """Return all stored calibration point pairs."""
+    return {"points": _calibration_points}
+
+
+@app.post("/calibration/save")
+def save_calibration():
+    """Calculate homography from stored points and save to file."""
+    if len(_calibration_points) < 4:
+        print(f"[CALIB SAVE] Not enough points: {len(_calibration_points)} < 4", flush=True)
+        return {"status": "need_more_points", "count": len(_calibration_points)}
+    print(f"[CALIB SAVE] Computing homography with {len(_calibration_points)} points", flush=True)
+    image_pts = [p[0] for p in _calibration_points]
+    mover_pts = [p[1] for p in _calibration_points]
+    H = calculate_homography(image_pts, mover_pts)
+    save_transformation_to_file(H)
+    with open("saved_coordinates.json", "w") as f:
+        json.dump(_calibration_points, f)
+    print(f"[CALIB SAVE] Homography saved to transformation_matrix.txt", flush=True)
+    return {"status": "saved", "count": len(_calibration_points)}
+
+
+@app.post("/homography/reload")
+def reload_homography():
+    """Reload the homography matrix from the transformation file."""
+    global _homography
+    try:
+        _homography = read_transformation_from_file()
+        return {"status": "reloaded"}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 # ==================== Walking ====================

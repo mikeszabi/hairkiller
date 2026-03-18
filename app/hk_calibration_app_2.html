@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>HK Calibration App v2 (Merged Backend)</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { 
+      font-family: sans-serif; 
+      background: #222; 
+      color: #eee; 
+      padding: 10px; 
+      margin: 0;
+    }
+    h1 { color: #0f0; margin-top: 0; }
+    h2 { color: #0f0; font-size: 14px; margin: 12px 0 8px 0; border-bottom: 1px solid #0f0; padding-bottom: 4px; }
+    
+    #container {
+      display: flex;
+      gap: 15px;
+      height: 100vh;
+      padding: 10px;
+    }
+    
+    #left {
+      flex: 0 0 60%;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    #right {
+      flex: 1;
+      overflow-y: auto;
+      padding-right: 10px;
+    }
+    
+    #video-container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 2px solid #0f0;
+      background: #000;
+    }
+    
+    img { 
+      max-width: 100%; 
+      max-height: 100%; 
+      display: block;
+      cursor: crosshair;
+    }
+    
+    .panel { 
+      margin-bottom: 15px; 
+      padding: 10px; 
+      background: #333; 
+      border: 1px solid #555;
+      border-radius: 4px;
+    }
+    
+    .panel-title { 
+      font-weight: bold; 
+      color: #0f0; 
+      font-size: 12px;
+      margin: 0 0 8px 0;
+    }
+    
+    button, input[type=number], input[type=checkbox], input[type=text], label { 
+      margin: 4px 2px; 
+      padding: 6px 10px; 
+      font-size: 13px; 
+      background: #444;
+      color: #eee;
+      border: 1px solid #666;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    
+    button:hover { background: #555; }
+    button:active { background: #666; }
+    
+    input[type=checkbox] { cursor: pointer; width: auto; padding: 4px; }
+    
+    .info-line {
+      margin: 4px 0;
+      font-size: 12px;
+      padding: 4px;
+      background: #222;
+      border-radius: 2px;
+    }
+    
+    .info-label { font-weight: bold; color: #0f0; }
+    
+    .button-group { margin: 6px 0; }
+    
+    .small-button { padding: 4px 8px; font-size: 12px; }
+    
+    input[type=number] { width: 70px; padding: 4px; }
+    
+    /* ScrollBar styling */
+    #right::-webkit-scrollbar {
+      width: 8px;
+    }
+    #right::-webkit-scrollbar-track {
+      background: #222;
+    }
+    #right::-webkit-scrollbar-thumb {
+      background: #666;
+      border-radius: 4px;
+    }
+    #right::-webkit-scrollbar-thumb:hover {
+      background: #888;
+    }
+  </style>
+</head>
+<body>
+  <h1>HK Calibration App v2 (Merged Backend)</h1>
+  
+  <div id="container">
+    <div id="left">
+      <div id="video-container">
+        <img id="cam" src="http://localhost:8000/frame/current" alt="camera stream" />
+      </div>
+    </div>
+    
+    <div id="right">
+      <!-- Detection Panel -->
+      <div class="panel">
+        <div class="panel-title">Red Dot Detection (Calibration)</div>
+        <label>
+          <input id="detectionToggle" type="checkbox" onchange="toggleDetection()"> 
+          Enable red dot detection overlay
+        </label>
+        <div class="info-line">
+          <span class="info-label">Dot in image:</span> X=<span id="dotImageX">-</span> Y=<span id="dotImageY">-</span>
+        </div>
+      </div>
+      
+      <!-- Mover Control Panel -->
+      <div class="panel">
+        <div class="panel-title">Direct Galvo Control</div>
+        <div class="info-line">
+          <span class="info-label">Position:</span> X=<span id="galvoX">-</span> Y=<span id="galvoY">-</span>
+        </div>
+        <div>
+          X: <input id="moveX" type="number" value="3000"> 
+          Y: <input id="moveY" type="number" value="3000">
+          <button onclick="moveTo()" class="small-button">Move</button>
+        </div>
+        <div class="button-group">
+          <button onclick="moveDir('up')" class="small-button">↑</button>
+          <button onclick="moveDir('down')" class="small-button">↓</button>
+          <button onclick="moveDir('left')" class="small-button">←</button>
+          <button onclick="moveDir('right')" class="small-button">→</button>
+          Step: <input id="step" type="number" value="25" style="width: 50px;">
+        </div>
+      </div>
+      
+      <!-- Calibration Panel -->
+      <div class="panel">
+        <div class="panel-title">Calibration Collection</div>
+        <div class="info-line">
+          <span class="info-label">Points stored:</span> <span id="storedCount">0</span>
+        </div>
+        <div class="button-group">
+          <button onclick="startCalibration()" class="small-button">Start</button>
+          <button onclick="storePoint()" class="small-button">Store Point</button>
+        </div>
+        <div class="button-group">
+          <button onclick="saveCalibration()" class="small-button">Calculate & Save Homography</button>
+        </div>
+      </div>
+      
+      <!-- Homography Testing Panel -->
+      <div class="panel">
+        <div class="panel-title">Homography Test (Click on video to move)</div>
+        <div class="info-line">
+          <span class="info-label">Click image coord:</span> X=<span id="imgX">-</span> Y=<span id="imgY">-</span>
+        </div>
+        <div class="info-line">
+          <span class="info-label">Target galvo:</span> X=<span id="tarX">-</span> Y=<span id="tarY">-</span>
+        </div>
+        <div class="info-line">
+          <span class="info-label">Move result:</span> <span id="moveRes">-</span>
+        </div>
+        <div class="button-group">
+          <button onclick="reloadH()" class="small-button">Reload Homography</button>
+          <span id="reloadStatus" style="font-size: 11px; color: #aaa;"> (not loaded)</span>
+        </div>
+      </div>
+      
+    </div>
+  </div>
+
+  <script>
+    const API = 'http://localhost:8000';
+    const cam = document.getElementById('cam');
+
+    // ==================== Detection & Polling ====================
+    async function updateDotCoordinates() {
+      try {
+        const res = await fetch(`${API}/dot`);
+        const data = await res.json();
+        const {x, y} = data;
+        if (x !== null && y !== null) {
+          document.getElementById('dotImageX').textContent = x;
+          document.getElementById('dotImageY').textContent = y;
+        } else {
+          document.getElementById('dotImageX').textContent = `-`;
+          document.getElementById('dotImageY').textContent = `-`;
+        }
+      } catch (err) {
+        console.error("Error fetching dot:", err);
+      }
+    }
+    
+    setInterval(updateDotCoordinates, 500);
+
+    const toggleDetection = async () => {
+      const checked = document.getElementById('detectionToggle').checked;
+      const res = await fetch(`${API}/calibration/detection/toggle?enabled=${checked}`, {method: 'POST'});
+      const data = await res.json();
+      console.log("Red dot detection toggled:", data);
+    };
+
+    // ==================== Galvo Control ====================
+    const post = async (endpoint, body={}) => {
+      const res = await fetch(`${API}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      return res.json();
+    };
+
+    const moveTo = async () => {
+      const x = parseInt(document.getElementById('moveX').value);
+      const y = parseInt(document.getElementById('moveY').value);
+      const r = await post(`/mover/move?x=${x}&y=${y}`);
+      console.log("Moved to", r);
+      updateGalvoDisplay();
+    };
+
+    const moveDir = async (dir) => {
+      const step = parseInt(document.getElementById('step').value);
+      const r = await post(`/mover/direction?direction=${dir}&step=${step}`);
+      console.log("Moved", dir, r);
+      updateGalvoDisplay();
+    };
+
+    async function updateGalvoDisplay() {
+      try {
+        const res = await fetch(`${API}/mover/pos`);
+        const data = await res.json();
+        document.getElementById('galvoX').textContent = data.x !== null ? data.x : 'ERR';
+        document.getElementById('galvoY').textContent = data.y !== null ? data.y : 'ERR';
+      } catch (err) {
+        console.error("Error fetching galvo pos:", err);
+      }
+    }
+
+    setInterval(updateGalvoDisplay, 1000);
+
+    // ==================== Calibration ====================
+    const startCalibration = async () => {
+      const r = await post('/calibration/start');
+      console.log(r);
+      document.getElementById('storedCount').textContent = '0';
+    };
+
+    const storePoint = async () => {
+      const r = await post('/calibration/store');
+      document.getElementById('storedCount').textContent = r.stored;
+      console.log(r);
+    };
+
+    const saveCalibration = async () => {
+      const r = await post('/calibration/save');
+      console.log(r);
+      if (r.status === 'saved') {
+        alert(`Homography saved! ${r.count} points used.`);
+      } else {
+        alert(`Error: ${r.status} (need 4+ points, have ${r.count})`);
+      }
+    };
+
+    // ==================== Homography Testing ====================
+    async function moveByImage(x, y) {
+      const res = await fetch(`${API}/mover/move_image?x=${x}&y=${y}`, { method: 'POST' });
+      return res.json();
+    }
+
+    cam.addEventListener('click', async (ev) => {
+      // compute coordinates relative to the actual image size
+      const rect = cam.getBoundingClientRect();
+      const scaleX = cam.naturalWidth / rect.width;
+      const scaleY = cam.naturalHeight / rect.height;
+      const imgX = Math.round((ev.clientX - rect.left) * scaleX);
+      const imgY = Math.round((ev.clientY - rect.top) * scaleY);
+      document.getElementById('imgX').textContent = imgX;
+      document.getElementById('imgY').textContent = imgY;
+
+      const r = await moveByImage(imgX, imgY);
+      if (r.error) {
+        document.getElementById('moveRes').textContent = '(homography not available)';
+        document.getElementById('tarX').textContent = '-';
+        document.getElementById('tarY').textContent = '-';
+      } else {
+        document.getElementById('tarX').textContent = r.target[0];
+        document.getElementById('tarY').textContent = r.target[1];
+        document.getElementById('moveRes').textContent = `(${r.new_position[0]}, ${r.new_position[1]})`;
+        updateGalvoDisplay();
+      }
+    });
+
+    async function reloadH() {
+      try {
+        const res = await fetch(`${API}/homography/reload`, { method: 'POST' });
+        const data = await res.json();
+        document.getElementById('reloadStatus').textContent = data.status || JSON.stringify(data);
+      } catch (err) {
+        document.getElementById('reloadStatus').textContent = 'error';
+        console.error('reload failed', err);
+      }
+    }
+  </script>
+</body>
+</html>
