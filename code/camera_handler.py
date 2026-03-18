@@ -49,12 +49,13 @@ def open_cam():
 
     # gyakran segít, hogy ne álljon bent sok régi frame:
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 3)
 
     # Disable auto-exposure so the camera cannot pick exposure times > 1/FPS.
     # With auto on, the driver silently stops streaming in dim light because
     # the sensor integration time exceeds the requested frame interval.
-    cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)   # 1 = manual (UVC standard)
-    cap.set(cv2.CAP_PROP_EXPOSURE, EXPOSURE) # tune via EXPOSURE constant above
+    #cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)   # 1 = manual (UVC standard)
+    #cap.set(cv2.CAP_PROP_EXPOSURE, EXPOSURE) # tune via EXPOSURE constant above
 
     for _ in range(WARMUP):
         cap.read()
