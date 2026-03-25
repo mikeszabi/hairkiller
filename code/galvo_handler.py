@@ -34,11 +34,11 @@ class GalvoInterface:
         self.dev.open()
         
         # internal state: track the last commanded position (don't rely on hardware query)
-        self._position_x = 3000
-        self._position_y = 3000
+        # self._position_x = 3000
+        # self._position_y = 3000
         
         # move to initial position on startup
-        self._move_internal(self._position_x, self._position_y)
+        # self._move_internal(self._position_x, self._position_y)
 
     def _move_internal(self, x: int, y: int) -> None:
         """Send the movement command and update internal state."""
@@ -55,6 +55,15 @@ class GalvoInterface:
         This avoids inaccurate hardware feedback; we trust what we commanded.
         """
         return self._position_x, self._position_y
+
+    def _set_660_laser(self, enable: bool) -> None:
+        """Send the movement command and update internal state."""
+        if (enable):
+            self.dev.query(f"SET_LASER_STATE 0,1")
+            self.dev.query(f"SET_LASER_PWR 0,28")
+        else:
+            self.dev.query(f"SET_LASER_STATE 0,0")
+            self.dev.query(f"SET_LASER_PWR 0,0")
 
     def move_2_pos(self, x: int, y: int) -> Tuple[int, int]:
         """Command the galvo to move to the given coordinates.
@@ -98,8 +107,9 @@ if __name__ == "__main__":
         sys.exit(0)
 
     gi = GalvoInterface(port=args.port, baud=args.baud, debug=True)
-    print("current", gi.get_position())
-    gi.move_2_pos(2000, 2000)
-    print("after move", gi.get_position())
-    gi.stop()
+    gi._set_660_laser(True)
+    # print("current", gi.get_position())
+    # gi.move_2_pos(2000, 2000)
+    # print("after move", gi.get_position())
+    # gi.stop()
 

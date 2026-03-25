@@ -687,6 +687,7 @@ def set_seq_length(length: int = Query(...)):
 # helper for front-end: convert image-space point to galvo coordinates
 @app.get("/coords/convert")
 def convert_image_to_galvo(ix: int = Query(...), iy: int = Query(...)):
+    global _homography
     if _homography is None:
         return JSONResponse(status_code=400, content={"error": "Homography unavailable"})
     try:

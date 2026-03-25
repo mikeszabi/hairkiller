@@ -633,42 +633,39 @@
       document.getElementById('galvoTargetInfo').textContent = '';
       document.getElementById('fireTargetBtn').disabled = true;
 
-      // ask server to convert to galvo
-      fetch(`${API}/coords/convert?ix=${ix}&iy=${iy}`)
-        .then(r => r.json())
-        .then(data => {
-          if (data.error) {
-            updateLog(`Convert error: ${data.error}`);
-          } else {
-            targetGalvoPt = [data.x, data.y];
-            document.getElementById('galvoTargetInfo').textContent = `Galvo (${data.x},${data.y})`;
-            document.getElementById('fireTargetBtn').disabled = false;
-          }
-        })
-        .catch(err => updateLog(`Conversion failed: ${err}`));
+      // Store image coordinates for move_image
+      targetGalvoPt = [ix, iy];
+      document.getElementById('galvoTargetInfo').textContent = `Image coords (${ix},${iy})`;
+      document.getElementById('fireTargetBtn').disabled = false;
     }
 
     async function fireTarget() {
       if (!targetGalvoPt) return;
       const test = document.getElementById('fireTestMode').checked;
       if (!isLaserArmed) {
-        updateLog(`Laser not armed, moving galvo to ${targetGalvoPt[0]},${targetGalvoPt[1]} only`);
+        updateLog(`Laser not armed, moving to image coords ${targetGalvoPt[0]},${targetGalvoPt[1]} only`);
         try {
-          await fetch(`${API}/mover/move?x=${targetGalvoPt[0]}&y=${targetGalvoPt[1]}`, {method: 'POST'});
+          await fetch(`${API}/mover/move_image?x=${targetGalvoPt[0]}&y=${targetGalvoPt[1]}`, {method: 'POST'});
           updateLog('Galvo moved');
         } catch (err) {
           updateLog(`Move failed: ${err}`);
         }
         return;
       }
-      updateLog(`Firing single target at ${targetGalvoPt[0]},${targetGalvoPt[1]} (${test ? 'TEST' : 'LIVE'})`);
+      updateLog(`Firing single target at image coords ${targetGalvoPt[0]},${targetGalvoPt[1]} (${test ? 'TEST' : 'LIVE'})`);
       try {
-        await fetch(`${API}/seq/length?length=1`, {method: 'POST'});
-        await fetch(`${API}/seq/target?idx=0&x=${targetGalvoPt[0]}&y=${targetGalvoPt[1]}`, {method: 'POST'});
-        const url = test ? `${API}/seq/start_test` : `${API}/seq/start`;
-        const res = await fetch(url, {method: 'POST'});
+        const res = await fetch(`${API}/mover/move_image?x=${targetGalvoPt[0]}&y=${targetGalvoPt[1]}`, {method: 'POST'});
         const data = await res.json();
-        updateLog(`Response: ${data.response.join(' ')}`);
+        if (data.error) {
+          updateLog(`Move error: ${data.error}`);
+          return;
+        }
+        await fetch(`${API}/seq/length?length=1`, {method: 'POST'});
+        await fetch(`${API}/seq/target?idx=0&x=${data.x}&y=${data.y}`, {method: 'POST'});
+        const url = test ? `${API}/seq/start_test` : `${API}/seq/start`;
+        const fireRes = await fetch(url, {method: 'POST'});
+        const fireData = await fireRes.json();
+        updateLog(`Response: ${fireData.response.join(' ')}`);
       } catch (err) {
         updateLog(`Fire target failed: ${err}`);
       }
