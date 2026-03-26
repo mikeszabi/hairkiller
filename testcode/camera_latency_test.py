@@ -25,7 +25,7 @@ import numpy as np
 
 DEV = "/dev/v4l/by-id/usb-Arducam_Technology_Co.__Ltd._Arducam_16MP_SN0001-video-index0"
 CROP_X, CROP_Y, CROP_W, CROP_H = 336, 12, 1920, 1920
-W, H, FPS = 2592, 1944, 10
+W, H, FPS = 2592, 1944, 5
 FOURCC = "MJPG"
 JPEG_QUALITY = 70
 

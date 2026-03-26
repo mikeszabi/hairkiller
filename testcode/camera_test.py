@@ -9,7 +9,7 @@ import cv2, time
 
 DEV = "/dev/v4l/by-id/usb-Arducam_Technology_Co.__Ltd._Arducam_16MP_SN0001-video-index0"
 
-W, H, FPS = 2592, 1944, 10
+W, H, FPS = 2592, 1944, 5
 FOURCC = "MJPG"
 
 MAX_FAILS = 10          # ennyi egymás utáni read fail után restart

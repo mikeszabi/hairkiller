@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HK Camera Test</title>
+  <style>
+    :root {
+      --bg: #081117;
+      --panel: rgba(15, 23, 30, 0.92);
+      --panel-2: #13212a;
+      --text: #eaf4f6;
+      --muted: #90a5ae;
+      --accent: #52d6ff;
+      --danger: #ff857a;
+      --ok: #7fffb0;
+      --border: #23414f;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(82, 214, 255, 0.12), transparent 28%),
+        linear-gradient(180deg, #061016 0%, #09141a 100%);
+      padding: 20px;
+    }
+
+    .shell {
+      max-width: 1480px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(360px, 0.9fr);
+      gap: 18px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.32);
+    }
+
+    .left-column,
+    .right-column {
+      display: grid;
+      gap: 18px;
+      align-content: start;
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+    }
+
+    h1 {
+      font-size: 30px;
+      margin-bottom: 8px;
+    }
+
+    h2 {
+      font-size: 18px;
+      margin-bottom: 14px;
+    }
+
+    p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .viewer {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 640px;
+      background: #020507;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    img {
+      display: block;
+      width: 100%;
+      height: auto;
+      max-height: 78vh;
+      object-fit: contain;
+      background: #000;
+    }
+
+    .toolbar,
+    .controls-grid,
+    .meta-grid,
+    .button-row {
+      display: grid;
+      gap: 10px;
+    }
+
+    .toolbar {
+      grid-template-columns: minmax(0, 1fr) auto auto auto;
+      align-items: end;
+    }
+
+    .controls-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .meta-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .button-row {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    label {
+      display: grid;
+      gap: 6px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    input,
+    button,
+    select {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel-2);
+      color: var(--text);
+      padding: 11px 12px;
+      font-size: 14px;
+    }
+
+    input[type="checkbox"] {
+      width: auto;
+      transform: scale(1.1);
+      margin-right: 8px;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    button:hover {
+      border-color: var(--accent);
+    }
+
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      min-height: 46px;
+      padding: 0 12px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel-2);
+      color: var(--text);
+    }
+
+    .status {
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    .status.ok {
+      color: var(--ok);
+    }
+
+    .status.error {
+      color: var(--danger);
+    }
+
+    .metric {
+      background: #0b151b;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+    }
+
+    .metric-label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .metric-value {
+      font-size: 20px;
+    }
+
+    pre {
+      margin: 0;
+      padding: 14px;
+      background: #071015;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      color: #bceefb;
+      overflow: auto;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    @media (max-width: 1100px) {
+      .shell {
+        grid-template-columns: 1fr;
+      }
+
+      .viewer {
+        min-height: 420px;
+      }
+
+      .toolbar {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="left-column">
+      <section class="panel">
+        <h1>HK Camera Test</h1>
+        <p>Camera stream validation, control surface, and latency statistics in one page.</p>
+      </section>
+
+      <section class="panel">
+        <div class="toolbar">
+          <label>
+            Backend URL
+            <input id="apiBase" value="http://127.0.0.1:8000" />
+          </label>
+          <button id="connectBtn" type="button">Connect Stream</button>
+          <button id="refreshBtn" type="button">Refresh Stream</button>
+          <button id="healthBtn" type="button">Reload Stats</button>
+        </div>
+        <div style="margin-top: 12px;">
+          <span id="status" class="status">Idle</span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="viewer">
+          <img id="cam" alt="Camera stream will appear here" />
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Live Statistics</h2>
+        <div class="meta-grid">
+          <div class="metric">
+            <span class="metric-label">Frame Size</span>
+            <span id="frameSize" class="metric-value">-</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Frame Index</span>
+            <span id="frameIndex" class="metric-value">-</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Measured FPS</span>
+            <span id="measuredFps" class="metric-value">-</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Frame Age</span>
+            <span id="frameAge" class="metric-value">-</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Encode Avg</span>
+            <span id="encodeAvg" class="metric-value">-</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Health</span>
+            <span id="healthState" class="metric-value">-</span>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="right-column">
+      <section class="panel">
+        <h2>Camera Controls</h2>
+        <div class="controls-grid">
+          <label>
+            FPS
+            <input id="fpsInput" type="number" min="1" max="120" step="1" value="10" />
+          </label>
+          <label>
+            Exposure Time
+            <input id="exposureInput" type="number" min="1" max="10000" step="1" value="1000" />
+          </label>
+          <label>
+            White Balance
+            <input id="whiteBalanceInput" type="number" min="2000" max="10000" step="10" value="4500" />
+          </label>
+          <div class="checkbox-row">
+            <label style="display:flex; align-items:center; gap:8px; color:var(--text);">
+              <input id="autoExposureInput" type="checkbox" checked />
+              Auto exposure
+            </label>
+          </div>
+          <div class="checkbox-row">
+            <label style="display:flex; align-items:center; gap:8px; color:var(--text);">
+              <input id="autoWbInput" type="checkbox" checked />
+              Auto white balance
+            </label>
+          </div>
+        </div>
+        <div class="button-row" style="margin-top: 12px;">
+          <button id="loadSettingsBtn" type="button">Load Camera Settings</button>
+          <button id="applySettingsBtn" type="button">Apply Camera Settings</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Latency Benchmark</h2>
+        <div class="controls-grid">
+          <label>
+            Samples
+            <input id="benchmarkSamples" type="number" min="5" max="200" step="1" value="20" />
+          </label>
+        </div>
+        <div class="button-row" style="margin-top: 12px;">
+          <button id="benchmarkBtn" type="button">Run Backend Benchmark</button>
+          <button id="snapshotBtn" type="button">Fetch Snapshot</button>
+        </div>
+        <div class="meta-grid" style="margin-top: 12px;">
+          <div class="metric">
+            <span class="metric-label">Pipeline Avg</span>
+            <span id="pipelineAvg" class="metric-value">-</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Read Wait Avg</span>
+            <span id="readAvg" class="metric-value">-</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Encode Avg</span>
+            <span id="benchEncodeAvg" class="metric-value">-</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Capture Age Avg</span>
+            <span id="captureAgeAvg" class="metric-value">-</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>JSON Output</h2>
+        <pre id="jsonOut">Waiting for data...</pre>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    function baseUrl() {
+      return $("apiBase").value.replace(/\/+$/, "");
+    }
+
+    function setStatus(message, mode = "") {
+      $("status").textContent = message;
+      $("status").className = mode ? `status ${mode}` : "status";
+    }
+
+    function fmtMs(value) {
+      return value == null ? "-" : `${value.toFixed(1)} ms`;
+    }
+
+    function fmtNum(value, digits = 1) {
+      return value == null ? "-" : Number(value).toFixed(digits);
+    }
+
+    async function fetchJson(path, options = {}) {
+      const res = await fetch(`${baseUrl()}${path}`, options);
+      const data = await res.json();
+      if (!res.ok || data.ok === false) {
+        throw new Error(data.error || `${path} failed`);
+      }
+      return data;
+    }
+
+    function updateJson(data) {
+      $("jsonOut").textContent = JSON.stringify(data, null, 2);
+    }
+
+    function connectStream() {
+      const url = `${baseUrl()}/frame/current?t=${Date.now()}`;
+      $("cam").src = url;
+      setStatus(`Connecting to ${url}`);
+    }
+
+    function applySettingsToForm(settings) {
+      $("fpsInput").value = Math.round(settings.fps ?? 10);
+      $("exposureInput").value = Math.round(settings.exposure ?? 1000);
+      $("whiteBalanceInput").value = Math.round(settings.white_balance ?? 4500);
+      $("autoExposureInput").checked = Number(settings.auto_exposure) !== 1;
+      $("autoWbInput").checked = Number(settings.auto_wb ?? 1) !== 0;
+    }
+
+    async function loadSettings() {
+      const data = await fetchJson("/camera/settings");
+      applySettingsToForm(data.settings);
+      updateJson(data);
+      setStatus("Camera settings loaded", "ok");
+    }
+
+    async function applySettings() {
+      const query = new URLSearchParams({
+        fps: $("fpsInput").value,
+        exposure: $("exposureInput").value,
+        white_balance: $("whiteBalanceInput").value,
+        auto_exposure: $("autoExposureInput").checked ? "true" : "false",
+        auto_wb: $("autoWbInput").checked ? "true" : "false",
+      });
+      const data = await fetchJson(`/camera/settings?${query.toString()}`, { method: "POST" });
+      applySettingsToForm(data.settings);
+      updateJson(data);
+      setStatus("Camera settings applied", "ok");
+      await refreshAll();
+    }
+
+    async function refreshAll() {
+      const [meta, stats, health] = await Promise.all([
+        fetchJson("/frame/meta"),
+        fetchJson("/stats"),
+        fetchJson("/health"),
+      ]);
+
+      $("frameSize").textContent = `${meta.width} x ${meta.height}`;
+      $("frameIndex").textContent = meta.frame_index;
+      $("measuredFps").textContent = fmtNum(stats.camera.measured_fps, 2);
+      $("frameAge").textContent = fmtMs(stats.camera.frame_age_ms);
+      $("encodeAvg").textContent = fmtMs(stats.stream.encode_ms_avg);
+      $("healthState").textContent = health.camera_ready ? "READY" : "DOWN";
+
+      updateJson({ meta, stats, health });
+      setStatus("Stats updated", "ok");
+    }
+
+    async function runBenchmark() {
+      const samples = $("benchmarkSamples").value;
+      const started = performance.now();
+      const data = await fetchJson(`/latency/benchmark?samples=${encodeURIComponent(samples)}`, { method: "POST" });
+      const clientRoundtrip = performance.now() - started;
+
+      $("pipelineAvg").textContent = fmtMs(data.total_pipeline_ms.avg);
+      $("readAvg").textContent = fmtMs(data.read_wait_ms.avg);
+      $("benchEncodeAvg").textContent = fmtMs(data.encode_ms.avg);
+      $("captureAgeAvg").textContent = fmtMs(data.frame_age_ms.avg);
+
+      data.client_roundtrip_ms = clientRoundtrip;
+      updateJson(data);
+      setStatus(`Benchmark complete in ${clientRoundtrip.toFixed(1)} ms`, "ok");
+    }
+
+    async function fetchSnapshot() {
+      const started = performance.now();
+      const res = await fetch(`${baseUrl()}/frame/snapshot?t=${Date.now()}`);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Snapshot fetch failed");
+      }
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      $("cam").src = objectUrl;
+      const elapsed = performance.now() - started;
+      setStatus(`Snapshot fetched in ${elapsed.toFixed(1)} ms`, "ok");
+    }
+
+    $("connectBtn").addEventListener("click", connectStream);
+    $("refreshBtn").addEventListener("click", () => {
+      connectStream();
+      refreshAll().catch((error) => setStatus(error.message, "error"));
+    });
+    $("healthBtn").addEventListener("click", () => {
+      refreshAll().catch((error) => setStatus(error.message, "error"));
+    });
+    $("loadSettingsBtn").addEventListener("click", () => {
+      loadSettings().catch((error) => setStatus(error.message, "error"));
+    });
+    $("applySettingsBtn").addEventListener("click", () => {
+      applySettings().catch((error) => setStatus(error.message, "error"));
+    });
+    $("benchmarkBtn").addEventListener("click", () => {
+      runBenchmark().catch((error) => setStatus(error.message, "error"));
+    });
+    $("snapshotBtn").addEventListener("click", () => {
+      fetchSnapshot().catch((error) => setStatus(error.message, "error"));
+    });
+
+    $("cam").addEventListener("load", () => setStatus("Stream image loaded", "ok"));
+    $("cam").addEventListener("error", () => setStatus("Stream failed to load", "error"));
+
+    connectStream();
+    loadSettings()
+      .then(refreshAll)
+      .catch((error) => setStatus(error.message, "error"));
+
+    setInterval(() => {
+      refreshAll().catch(() => {});
+    }, 2500);
+  </script>
+</body>
+</html>
