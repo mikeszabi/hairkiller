@@ -15,7 +15,7 @@ os.environ["OPENCV_LOG_LEVEL"] = "SILENT"
 
 DEV = "/dev/v4l/by-id/usb-Arducam_Technology_Co.__Ltd._Arducam_16MP_SN0001-video-index0"
 
-W, H, FPS = 2592, 1944, 10
+W, H, FPS = 2592, 1944, 5
 FOURCC = "MJPG"
 
 # Exposure time in 100µs units (V4L2 exposure_time_absolute).
@@ -259,6 +259,8 @@ class UVCInterface:
         white_balance: int | None = None,
         fps: float | None = None,
     ) -> dict:
+        reopen_required = False
+
         if auto_exposure is not None:
             self.auto_exposure = bool(auto_exposure)
         if exposure is not None:
@@ -268,19 +270,48 @@ class UVCInterface:
         if white_balance is not None:
             self.white_balance = int(white_balance)
         if fps is not None:
-            self.fps = int(round(fps))
+            new_fps = int(round(fps))
+            if new_fps != self.fps:
+                self.fps = new_fps
+                reopen_required = True
 
         with self._cap_lock:
             if self.cap is None:
                 raise ValueError("Camera is not open")
-            self.cap.set(cv2.CAP_PROP_FPS, self.fps)
-            self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 3 if self.auto_exposure else 1)
-            if self.exposure is not None:
-                self.cap.set(cv2.CAP_PROP_EXPOSURE, self.exposure)
-            if hasattr(cv2, "CAP_PROP_AUTO_WB"):
-                self.cap.set(cv2.CAP_PROP_AUTO_WB, 1 if self.auto_wb else 0)
-            if self.white_balance is not None and hasattr(cv2, "CAP_PROP_WB_TEMPERATURE"):
-                self.cap.set(cv2.CAP_PROP_WB_TEMPERATURE, self.white_balance)
+
+            if reopen_required:
+                old_cap = self.cap
+                old_cap.release()
+                self.cap = None
+                time.sleep(0.2)
+                new_cap = open_cam(
+                    dev=DEV,
+                    width=self.width,
+                    height=self.height,
+                    fps=self.fps,
+                    fourcc=self.fourcc,
+                    auto_exposure=self.auto_exposure,
+                    exposure=self.exposure,
+                    auto_wb=self.auto_wb,
+                    white_balance=self.white_balance,
+                )
+                if new_cap is None:
+                    self.cap = old_cap
+                    raise ValueError(f"Could not reopen camera {DEV} with fps={self.fps}")
+                self.cap = new_cap
+                with self._lock:
+                    self._raw_frame = None
+                    self._last_frame_ts = None
+                    self._frame_intervals_ms.clear()
+                    self._read_fail_count = 0
+            else:
+                self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 3 if self.auto_exposure else 1)
+                if self.exposure is not None:
+                    self.cap.set(cv2.CAP_PROP_EXPOSURE, self.exposure)
+                if hasattr(cv2, "CAP_PROP_AUTO_WB"):
+                    self.cap.set(cv2.CAP_PROP_AUTO_WB, 1 if self.auto_wb else 0)
+                if self.white_balance is not None and hasattr(cv2, "CAP_PROP_WB_TEMPERATURE"):
+                    self.cap.set(cv2.CAP_PROP_WB_TEMPERATURE, self.white_balance)
 
         return self.get_settings()
 
@@ -318,4 +349,3 @@ if __name__ == "__main__":
                 break
 
     cv2.destroyAllWindows()
-
