@@ -17,107 +17,22 @@ from camera_handler import UVCInterface
 from detection_handler import ObjectDetector
 from detection_utils import remove_overlapping_boxes, get_box_centers, detect_red_dot
 from galvo_handler import GalvoInterface
+from laser_handler import LaserInterface
+from target_handler import TargetInterface
 from calibration_utils import (
     read_transformation_from_file,
     transform_to_mover_coordinates,
     calculate_homography,
     save_transformation_to_file,
 )
-from serial_devices_handler import SerialDevice
 import threading
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# ==================== Laser Handler ====================
-class LaserControlInterface:
-    """Wrapper for laser serial protocol commands."""
-    
-    def __init__(self, port='/dev/ttyACM0', baud=115200, debug=False):
-        self.device = SerialDevice(port=port, baud=baud, debug=debug)
-        self.device.open()
-        self.last_error = None
-        print("[LASER] Interface initialized", flush=True)
-    
-    def _send_cmd(self, cmd: str):
-        """Send command and return response."""
-        try:
-            response = self.device.query(cmd, wait_s=0.1)
-            return response
-        except Exception as e:
-            self.last_error = str(e)
-            print(f"[LASER] Command error: {e}", flush=True)
-            return [f"ERROR: {e}"]
-    
-    def arm_laser(self):
-        """ARM_LASER"""
-        return self._send_cmd("ARM_LASER")
-    
-    def disarm_laser(self):
-        """DISARM_LASER"""
-        return self._send_cmd("DISARM_LASER")
-    
-    def ack_errors(self):
-        """ACK_ERRORS"""
-        return self._send_cmd("ACK_ERRORS")
-    
-    def set_laser_pwr(self, laser_id: int, pwr: int):
-        """SET_LASER_PWR laser_id(1-4) pwr(1-100)"""
-        pwr = max(1, min(100, pwr))
-        return self._send_cmd(f"SET_LASER_PWR {laser_id},{pwr}")
-    
-    def set_active_lasers(self, l1064: int, l980: int, l808: int, l660: int):
-        """SET_ACTIVE_LASERS 1,1,1,0"""
-        return self._send_cmd(f"SET_ACTIVE_LASERS {int(bool(l1064))},{int(bool(l980))},{int(bool(l808))},{int(bool(l660))}")
-    
-    def set_las_curr(self, curr: int):
-        """SET_LAS_CURR 1-100"""
-        curr = max(1, min(100, curr))
-        return self._send_cmd(f"SET_LAS_CURR {curr}")
-    
-    def set_las_pulse(self, pulse_ms: int):
-        """SET_LAS_PULSE 1-1000"""
-        pulse_ms = max(1, min(1000, pulse_ms))
-        return self._send_cmd(f"SET_LAS_PULSE {pulse_ms}")
-    
-    def set_seq_length(self, length: int):
-        """SET_SEQ_LENGTH 1-256"""
-        length = max(1, min(256, length))
-        return self._send_cmd(f"SET_SEQ_LENGTH {length}")
-    
-    def set_target_point(self, idx: int, x: int, y: int):
-        """SET_TARGET_POINT idx,x,y"""
-        idx = max(0, min(255, idx))
-        x = max(0, min(4095, x))
-        y = max(0, min(4095, y))
-        return self._send_cmd(f"SET_TARGET_POINT {idx},{x},{y}")
-    
-    def start_seq(self):
-        """START_SEQ"""
-        return self._send_cmd("START_SEQ")
-    
-    def start_seq_test(self):
-        """START_SEQ_TEST"""
-        return self._send_cmd("START_SEQ_TEST")
-    
-    def stop_seq(self):
-        """STOP_SEQ"""
-        return self._send_cmd("STOP_SEQ")
-    
-    def halt_seq(self):
-        """HALT_SEQ"""
-        return self._send_cmd("HALT_SEQ")
-    
-    def resume_seq(self):
-        """RESUME_SEQ"""
-        return self._send_cmd("RESUME_SEQ")
-
-    def get_laser_temp(self):
-        """GET_LASER_TEMP"""
-        return self._send_cmd("GET_LASER_TEMP")
-
 # ==================== FastAPI App ====================
 _galvo = GalvoInterface(debug=False)
 _laser = None  # initialized on startup
+_target = None  # initialized once laser is available
 
 app = FastAPI(title="hk_full_app")
 
@@ -145,6 +60,7 @@ _turbo = TurboJPEG()
 # Calibration state
 _calibration_points = []  # list of (image_pt, mover_pt) pairs
 _red_dot_detection_enabled = False  # toggle for red dot overlay
+_red_dot_enabled = False  # hardware red dot state
 
 # Background inference optimization
 _inference_cache = None
@@ -166,11 +82,13 @@ except Exception as e:
 
 # Initialize laser interface
 try:
-    _laser = LaserControlInterface()
+    _laser = LaserInterface()
+    _target = TargetInterface(dev=_laser.dev, channel_provider=_laser.get_channel_power_triplet)
     print("[LASER] Interface initialized", flush=True)
 except Exception as e:
     print(f"[LASER] Failed to initialize: {e}", flush=True)
     _laser = None
+    _target = None
 
 
 def _background_inference_worker():
@@ -402,7 +320,7 @@ def toggle_detection(enabled: bool = Query(...)):
 
 @app.get("/detection/status")
 def get_detection_status():
-    return {"detection_enabled": _hair_detection_enabled, "conf": _detection_conf}
+    return {"detection_enabled": _hair_detection_enabled, "conf": _detection_conf, "red_dot": _red_dot_enabled}
 
 
 @app.post("/detection/conf")
@@ -645,6 +563,9 @@ def set_active_lasers(l1064: int = Query(1), l980: int = Query(1), l808: int = Q
     if _laser is None:
         return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
     resp = _laser.set_active_lasers(l1064, l980, l808, l660)
+    if l660 is not None:
+        global _red_dot_enabled
+        _red_dot_enabled = bool(l660)
     return {"response": resp, "active": [bool(l1064), bool(l980), bool(l808), bool(l660)]}
 
 
@@ -670,18 +591,28 @@ def get_laser_temp():
 
 @app.post("/laser/pulse")
 def set_las_pulse(pulse_ms: int = Query(...)):
+    if _target is None:
+        return JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
+    resp = _target.set_las_pulse(pulse_ms)
+    return {"response": resp, "pulse_ms": pulse_ms}
+
+
+@app.post("/laser/red_dot")
+def set_red_dot(enabled: bool = Query(...)):
+    global _red_dot_enabled
     if _laser is None:
         return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
-    resp = _laser.set_las_pulse(pulse_ms)
-    return {"response": resp, "pulse_ms": pulse_ms}
+    resp = _laser.set_red_dot(enabled)
+    _red_dot_enabled = enabled
+    return {"response": resp, "enabled": enabled}
 
 
 # ==================== Sequence Control ====================
 @app.post("/seq/length")
 def set_seq_length(length: int = Query(...)):
-    if _laser is None:
-        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
-    resp = _laser.set_seq_length(length)
+    if _target is None:
+        return JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
+    resp = _target.set_seq_length(length)
     return {"response": resp, "length": length}
 
 # helper for front-end: convert image-space point to galvo coordinates
@@ -700,49 +631,49 @@ def convert_image_to_galvo(ix: int = Query(...), iy: int = Query(...)):
 
 @app.post("/seq/target")
 def set_target_point(idx: int = Query(...), x: int = Query(...), y: int = Query(...)):
-    if _laser is None:
-        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
-    resp = _laser.set_target_point(idx, x, y)
+    if _target is None:
+        return JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
+    resp = _target.set_target_point(idx, x, y)
     return {"response": resp, "idx": idx, "x": x, "y": y}
 
 
 @app.post("/seq/start")
 def start_seq():
-    if _laser is None:
-        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
-    resp = _laser.start_seq()
+    if _target is None:
+        return JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
+    resp = _target.start_seq()
     return {"response": resp}
 
 
 @app.post("/seq/start_test")
 def start_seq_test():
-    if _laser is None:
-        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
-    resp = _laser.start_seq_test()
+    if _target is None:
+        return JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
+    resp = _target.start_seq_test()
     return {"response": resp}
 
 
 @app.post("/seq/stop")
 def stop_seq():
-    if _laser is None:
-        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
-    resp = _laser.stop_seq()
+    if _target is None:
+        return JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
+    resp = _target.stop_seq()
     return {"response": resp}
 
 
 @app.post("/seq/halt")
 def halt_seq():
-    if _laser is None:
-        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
-    resp = _laser.halt_seq()
+    if _target is None:
+        return JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
+    resp = _target.halt_seq()
     return {"response": resp}
 
 
 @app.post("/seq/resume")
 def resume_seq():
-    if _laser is None:
-        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
-    resp = _laser.resume_seq()
+    if _target is None:
+        return JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
+    resp = _target.resume_seq()
     return {"response": resp}
 
 
@@ -754,8 +685,8 @@ def fire_walk(test_mode: bool = Query(False)):
     set them as sequence targets, and fire.
     If test_mode=True, uses START_SEQ_TEST, else START_SEQ.
     """
-    if _laser is None:
-        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    if _target is None:
+        return JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
     
     if not _detected_points:
         return JSONResponse(status_code=400, content={"error": "No points"})
@@ -777,17 +708,17 @@ def fire_walk(test_mode: bool = Query(False)):
             print(f"[FIRE] Transform error: {e}", flush=True)
     
     # Set sequence length
-    _laser.set_seq_length(len(targets))
+    _target.set_seq_length(len(targets))
     
     # Set all targets
     for idx, x, y in targets:
-        _laser.set_target_point(idx, x, y)
+        _target.set_target_point(idx, x, y)
     
     # Start sequence
     if test_mode:
-        resp = _laser.start_seq_test()
+        resp = _target.start_seq_test()
     else:
-        resp = _laser.start_seq()
+        resp = _target.start_seq()
     
     return {
         "status": "firing",

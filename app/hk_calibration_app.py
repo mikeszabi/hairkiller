@@ -16,6 +16,7 @@ import json
 from camera_handler import UVCInterface
 from detection_utils import detect_red_dot
 from galvo_handler import GalvoInterface
+from laser_handler import LaserInterface
 from calibration_utils import (
     calculate_homography,
     save_transformation_to_file,
@@ -23,8 +24,14 @@ from calibration_utils import (
     transform_to_mover_coordinates,
 )
 
-# create galvo interface on startup (initializes to 3000,3000)
+# create interfaces on startup (galvo initializes to 3000,3000)
 _galvo = GalvoInterface(debug=False)
+try:
+    _laser = LaserInterface()
+    print("[LASER] Interface initialized", flush=True)
+except Exception as e:
+    print("[LASER] Failed to initialize:", e, flush=True)
+    _laser = None
 
 app = FastAPI(title="hk_calibration_app")
 
@@ -42,6 +49,7 @@ _uvc = UVCInterface()
 # we already created `_galvo` above using the SerialDevice wrapper
 _calibration_points = []  # list of (image_pt, mover_pt) pairs
 _detection_enabled = False  # toggle for automatic red dot detection on frames
+_red_dot_enabled = False
 _homography = None
 
 # attempt to load the homography at startup
@@ -125,6 +133,16 @@ def get_mover_pos():
     return {"x": x, "y": y}
 
 
+@app.post("/laser/red_dot")
+def set_red_dot(enabled: bool = Query(...)):
+    global _red_dot_enabled
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser interface unavailable"})
+    resp = _laser.set_red_dot(enabled)
+    _red_dot_enabled = enabled
+    return {"response": resp, "enabled": enabled}
+
+
 @app.post("/mover/move")
 def move_to(x: int = Query(...), y: int = Query(...)):
     if _galvo is None:
@@ -173,15 +191,22 @@ def move_direction(direction: str = Query(...), step: int = Query(25)):
 
 @app.post("/detection/toggle")
 def toggle_detection(enabled: bool = Query(...)):
-    global _detection_enabled
+    global _detection_enabled, _red_dot_enabled
     _detection_enabled = enabled
+    # optionally turn on/off the physical red dot to aid visualization
+    if _laser is not None:
+        try:
+            _laser.set_red_dot(enabled)
+            globals()["_red_dot_enabled"] = enabled
+        except Exception as e:
+            print(f"[LASER] Red dot toggle failed: {e}", flush=True)
     print(f"[DETECTION] Toggled to: {_detection_enabled}", flush=True)
-    return {"detection_enabled": _detection_enabled}
+    return {"detection_enabled": _detection_enabled, "red_dot": _red_dot_enabled}
 
 
 @app.get("/detection/status")
 def get_detection_status():
-    return {"detection_enabled": _detection_enabled}
+    return {"detection_enabled": _detection_enabled, "red_dot": _red_dot_enabled}
 
 
 @app.post("/calibration/start")

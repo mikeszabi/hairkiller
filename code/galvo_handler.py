@@ -1,85 +1,59 @@
-"""Galvo controller wrapper using the generic serial_devices_handler.
+"""Galvo controller wrapper using serial_commands and SerialDevice."""
 
-This replaces the old `GalvoInterface` implementation by talking directly
-via a SerialDevice object and issuing the `SET_GALVO_POS_XY` and
-`GET_GALVO_POS_XY` commands seen in `test_galvo.py`.
+from __future__ import annotations
 
-The interface tracks internal position state (what was commanded) rather than
-relying on hardware feedback, which is more accurate.  The galvo starts
-and initializes to position (3000, 3000).
-"""
-
-from typing import Tuple
+from typing import Tuple, Optional
 import sys
 
 from serial_devices_handler import SerialDevice, DEFAULT_PORT, DEFAULT_BAUD
+from serial_commands import build_command
 
 
-# helper wrappers around the raw serial device so callers see familiar methods
+def _clamp(val: int, lo: int, hi: int) -> int:
+    return max(lo, min(hi, val))
+
+
 class GalvoInterface:
+    """Minimal galvo control surface used by the apps."""
+
     def __init__(self, port: str = DEFAULT_PORT, baud: int = DEFAULT_BAUD,
-                 timeout_s: float = None, debug: bool = False):
-        """Create and open the serial device to talk to the galvo.
-
-        Parameters mirror those of SerialDevice.  `timeout_s` defaults to the
-        module default if left as None.
-
-        The class keeps an internal state of the last commanded position
-        and initializes to (3000, 3000).
-        """
+                 timeout_s: Optional[float] = None, debug: bool = False):
         kwargs = {}
         if timeout_s is not None:
             kwargs["timeout_s"] = timeout_s
         self.dev = SerialDevice(port=port, baud=baud, debug=debug, **kwargs)
         self.dev.open()
-        
-        # internal state: track the last commanded position (don't rely on hardware query)
-        # self._position_x = 3000
-        # self._position_y = 3000
-        
-        # move to initial position on startup
-        # self._move_internal(self._position_x, self._position_y)
+        self._position_x = 3000
+        self._position_y = 3000
+        self._move_internal(self._position_x, self._position_y)
+
+    def _send(self, cmd_name: str, *params) -> None:
+        payload = build_command(cmd_name, *params)
+        self.dev.query(payload, expect_prefix=None, extra_read_window_s=0.2)
 
     def _move_internal(self, x: int, y: int) -> None:
-        """Send the movement command and update internal state."""
-        self.dev.query(f"SET_GALVO_POS_XY {x},{y}", expect_prefix="SET_GALVO_POS_XY:")
-        self._position_x = x
-        self._position_y = y
+        x = _clamp(x, 0, 4095)
+        y = _clamp(y, 0, 4095)
+        self._send("TARGET_SET_POS", x, y)
+        self._position_x, self._position_y = x, y
 
     def close(self):
         self.dev.close()
 
     def get_position(self) -> Tuple[int, int]:
-        """Return the internally tracked position (not from hardware query).
-
-        This avoids inaccurate hardware feedback; we trust what we commanded.
-        """
+        return
         return self._position_x, self._position_y
 
-    def _set_660_laser(self, enable: bool) -> None:
-        """Send the movement command and update internal state."""
-        if (enable):
-            self.dev.query(f"SET_LASER_STATE 0,1")
-            self.dev.query(f"SET_LASER_PWR 0,28")
-        else:
-            self.dev.query(f"SET_LASER_STATE 0,0")
-            self.dev.query(f"SET_LASER_PWR 0,0")
-
     def move_2_pos(self, x: int, y: int) -> Tuple[int, int]:
-        """Command the galvo to move to the given coordinates.
-
-        Returns the internally tracked position.
-        """
         self._move_internal(x, y)
         return self.get_position()
 
     def move_direction(self, direction: str, step: int = 25) -> Tuple[int, int]:
-        """Convenience helper to nudge the galvo in a cardinal direction."""
         x, y = self.get_position()
         if direction == "up":
-            y += step
-        elif direction == "down":
             y -= step
+        elif direction == "down":
+            y += step
         elif direction == "left":
             x -= step
         elif direction == "right":
@@ -87,11 +61,9 @@ class GalvoInterface:
         return self.move_2_pos(x, y)
 
     def stop(self) -> None:
-        """Close connection (no explicit stop command exists)."""
         self.close()
 
 
-# simple demonstration when invoked directly
 if __name__ == "__main__":
     import argparse
 
@@ -107,9 +79,7 @@ if __name__ == "__main__":
         sys.exit(0)
 
     gi = GalvoInterface(port=args.port, baud=args.baud, debug=True)
-    gi._set_660_laser(True)
-    # print("current", gi.get_position())
-    # gi.move_2_pos(2000, 2000)
-    # print("after move", gi.get_position())
-    # gi.stop()
-
+    print("current", gi.get_position())
+    gi.move_2_pos(2000, 2000)
+    print("after move", gi.get_position())
+    gi.stop()

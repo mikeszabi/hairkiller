@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>HK Calibration & Homography App</title>
+  <title>HK Calibration App v2 (Merged Backend)</title>
   <style>
     * { box-sizing: border-box; }
     body { 
@@ -114,7 +114,7 @@
   </style>
 </head>
 <body>
-  <h1>HK Calibration & Homography Test</h1>
+  <h1>HK Calibration App v2 (Merged Backend)</h1>
   
   <div id="container">
     <div id="left">
@@ -126,10 +126,10 @@
     <div id="right">
       <!-- Detection Panel -->
       <div class="panel">
-        <div class="panel-title">Detection</div>
+        <div class="panel-title">Red Dot Detection (Calibration)</div>
         <label>
           <input id="detectionToggle" type="checkbox" onchange="toggleDetection()"> 
-          Enable red dot detection
+          Enable red dot detection overlay
         </label>
         <div class="info-line">
           <span class="info-label">Dot in image:</span> X=<span id="dotImageX">-</span> Y=<span id="dotImageY">-</span>
@@ -196,31 +196,29 @@
     const API = 'http://localhost:8000';
     const cam = document.getElementById('cam');
 
-    // ==================== Detection & Polling ====================
-    async function updateDotCoordinates() {
-      try {
-        const res = await fetch(`${API}/dot`);
-        const data = await res.json();
-        const {x, y} = data;
-        if (x !== null && y !== null) {
-          document.getElementById('dotImageX').textContent = x;
-          document.getElementById('dotImageY').textContent = y;
-        } else {
-          document.getElementById('dotImageX').textContent = `-`;
-          document.getElementById('dotImageY').textContent = `-`;
-        }
-      } catch (err) {
-        console.error("Error fetching dot:", err);
+    // ==================== Detection & SSE ====================
+    // SSE for red dot coordinates
+    const dotEventSource = new EventSource(`${API}/sse/dot`);
+    dotEventSource.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      console.log('Dot SSE:', data);
+      if (data.x !== null && data.y !== null) {
+        document.getElementById('dotImageX').textContent = data.x;
+        document.getElementById('dotImageY').textContent = data.y;
+      } else {
+        document.getElementById('dotImageX').textContent = '-';
+        document.getElementById('dotImageY').textContent = '-';
       }
-    }
-    
-    setInterval(updateDotCoordinates, 500);
+    };
+    dotEventSource.onerror = (err) => {
+      console.error('Dot SSE error:', err);
+    };
 
     const toggleDetection = async () => {
       const checked = document.getElementById('detectionToggle').checked;
-      const res = await fetch(`${API}/detection/toggle?enabled=${checked}`, {method: 'POST'});
+      const res = await fetch(`${API}/calibration/detection/toggle?enabled=${checked}`, {method: 'POST'});
       const data = await res.json();
-      console.log("Detection toggled:", data);
+      console.log("Red dot detection toggled:", data);
     };
 
     // ==================== Galvo Control ====================
@@ -238,28 +236,25 @@
       const y = parseInt(document.getElementById('moveY').value);
       const r = await post(`/mover/move?x=${x}&y=${y}`);
       console.log("Moved to", r);
-      updateGalvoDisplay();
     };
 
     const moveDir = async (dir) => {
       const step = parseInt(document.getElementById('step').value);
       const r = await post(`/mover/direction?direction=${dir}&step=${step}`);
       console.log("Moved", dir, r);
-      updateGalvoDisplay();
     };
 
-    async function updateGalvoDisplay() {
-      try {
-        const res = await fetch(`${API}/mover/pos`);
-        const data = await res.json();
-        document.getElementById('galvoX').textContent = data.x !== null ? data.x : 'ERR';
-        document.getElementById('galvoY').textContent = data.y !== null ? data.y : 'ERR';
-      } catch (err) {
-        console.error("Error fetching galvo pos:", err);
-      }
-    }
-
-    setInterval(updateGalvoDisplay, 1000);
+    // SSE for galvo position
+    const galvoEventSource = new EventSource(`${API}/sse/galvo_pos`);
+    galvoEventSource.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      console.log('Galvo SSE:', data);
+      document.getElementById('galvoX').textContent = data.x !== null ? data.x : 'ERR';
+      document.getElementById('galvoY').textContent = data.y !== null ? data.y : 'ERR';
+    };
+    galvoEventSource.onerror = (err) => {
+      console.error('Galvo SSE error:', err);
+    };
 
     // ==================== Calibration ====================
     const startCalibration = async () => {
@@ -309,7 +304,6 @@
         document.getElementById('tarX').textContent = r.target[0];
         document.getElementById('tarY').textContent = r.target[1];
         document.getElementById('moveRes').textContent = `(${r.new_position[0]}, ${r.new_position[1]})`;
-        updateGalvoDisplay();
       }
     });
 
@@ -326,4 +320,3 @@
   </script>
 </body>
 </html>
-
