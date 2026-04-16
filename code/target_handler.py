@@ -73,6 +73,12 @@ class TargetInterface:
     def resume_seq(self):
         return self._send("TARGET_CONTINUE")
 
+    def get_state(self):
+        return self._send("TARGET_GET_STATE")
+
+    def get_last_error(self):
+        return self._send("TARGET_GET_LAST_ERROR")
+
     def close(self):
         try:
             self.dev.close()

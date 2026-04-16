@@ -12,6 +12,7 @@ import cv2
 import logging
 import json
 from turbojpeg import TurboJPEG
+from pydantic import BaseModel
 
 from camera_handler import UVCInterface
 from detection_handler import ObjectDetector
@@ -26,6 +27,7 @@ from calibration_utils import (
     save_transformation_to_file,
 )
 import threading
+from collections import deque
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -61,6 +63,12 @@ _turbo = TurboJPEG()
 _calibration_points = []  # list of (image_pt, mover_pt) pairs
 _red_dot_detection_enabled = False  # toggle for red dot overlay
 _red_dot_enabled = False  # hardware red dot state
+_app_error_events = deque(maxlen=25)
+_app_error_lock = threading.Lock()
+_sequence_events = deque(maxlen=25)
+_sequence_lock = threading.Lock()
+_test_events = deque(maxlen=25)
+_test_lock = threading.Lock()
 
 # Background inference optimization
 _inference_cache = None
@@ -130,6 +138,91 @@ def _background_inference_worker():
 _inference_thread = threading.Thread(target=_background_inference_worker, daemon=True)
 _inference_thread.start()
 print("[INFERENCE THREAD] Background worker started", flush=True)
+
+
+class RawCommandRequest(BaseModel):
+    command: str
+
+
+def _record_app_error_event(raw_message: str) -> None:
+    message = str(raw_message).strip()
+    if not message:
+        return
+
+    if "APP_HARD_FAULT_HAPPENED" in message:
+        level = "hard_fault"
+    elif "APP_ERROR_HAPPENED" in message:
+        level = "error"
+    else:
+        return
+
+    event = {
+        "level": level,
+        "message": message,
+        "timestamp": int(time.time() * 1000),
+    }
+    with _app_error_lock:
+        _app_error_events.appendleft(event)
+
+
+def _record_sequence_event(raw_message: str) -> None:
+    message = str(raw_message).strip()
+    if not message or "TARGET_SEQ_FINISHED" not in message:
+        return
+
+    status = "unknown"
+    if "->" in message:
+        payload = message.split("->", 1)[1].strip().strip("[]")
+        if payload:
+            status = payload.split(",", 1)[0].strip() or "unknown"
+
+    event = {
+        "status": status,
+        "message": message,
+        "timestamp": int(time.time() * 1000),
+    }
+    with _sequence_lock:
+        _sequence_events.appendleft(event)
+
+
+def _record_test_event(raw_message: str) -> None:
+    message = str(raw_message).strip()
+    if not message:
+        return
+
+    if "APP_WATCHDOG_TRIGGERED" in message:
+        kind = "watchdog"
+        status = "triggered"
+    elif "APP_LASER_PWR_TEST_FINISHED" in message:
+        kind = "laser_power_test"
+        status = "unknown"
+        if "->" in message:
+            payload = message.split("->", 1)[1].strip().strip("[]")
+            if payload:
+                status = payload.split(",", 1)[0].strip() or "unknown"
+    else:
+        return
+
+    event = {
+        "kind": kind,
+        "status": status,
+        "message": message,
+        "timestamp": int(time.time() * 1000),
+    }
+    with _test_lock:
+        _test_events.appendleft(event)
+
+
+def _drain_async_messages() -> None:
+    if _laser is None:
+        return
+    for raw_message in _laser.pop_async_messages():
+        if "APP_ERROR_HAPPENED" in raw_message or "APP_HARD_FAULT_HAPPENED" in raw_message:
+            _record_app_error_event(raw_message)
+        if "TARGET_SEQ_FINISHED" in raw_message:
+            _record_sequence_event(raw_message)
+        if "APP_WATCHDOG_TRIGGERED" in raw_message or "APP_LASER_PWR_TEST_FINISHED" in raw_message:
+            _record_test_event(raw_message)
 
 
 def _generate_camera():
@@ -216,6 +309,229 @@ def sse_detection():
             time.sleep(0.1)  # Check every 100ms
     
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.get("/app/errors")
+def get_app_errors():
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+
+    _drain_async_messages()
+
+    app_state = _laser.get_app_state()
+    app_last_error = _laser.get_app_last_error()
+
+    with _app_error_lock:
+        events = list(_app_error_events)
+
+    return {
+        "state": app_state,
+        "last_error": app_last_error,
+        "events": events,
+    }
+
+
+@app.get("/app/errors/events")
+def get_app_error_events():
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+
+    _drain_async_messages()
+
+    with _app_error_lock:
+        events = list(_app_error_events)
+
+    return {"events": events}
+
+
+@app.post("/app/errors/clear")
+def clear_app_errors():
+    global _red_dot_enabled
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+
+    resp = _laser.clear_app_error()
+    _red_dot_enabled = False
+    _drain_async_messages()
+
+    with _app_error_lock:
+        _app_error_events.clear()
+
+    return {"response": resp}
+
+
+@app.get("/app/test/status")
+def get_app_test_status():
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+
+    _drain_async_messages()
+
+    with _test_lock:
+        events = list(_test_events)
+
+    return {
+        "state": _laser.get_app_state(),
+        "last_error": _laser.get_app_last_error(),
+        "laser_test_result": _laser.get_laser_test_result(),
+        "fw_version": _laser.get_fw_version(),
+        "hw_version": _laser.get_hw_version(),
+        "proc_time": _laser.get_app_proc_time(),
+        "events": events,
+    }
+
+
+@app.get("/app/test/events")
+def get_app_test_events():
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+
+    _drain_async_messages()
+
+    with _test_lock:
+        events = list(_test_events)
+
+    return {"events": events}
+
+
+@app.post("/app/ping")
+def app_ping():
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    return {"response": _laser.app_ping()}
+
+
+@app.get("/app/commands")
+def get_app_commands():
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    return {"response": _laser.get_app_commands()}
+
+
+@app.get("/app/limits")
+def get_app_limits():
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    return {"response": _laser.get_app_limits()}
+
+
+@app.post("/app/reset")
+def app_reset():
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    return {"response": _laser.app_reset()}
+
+
+@app.get("/app/proc_time")
+def get_app_proc_time():
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    return {"response": _laser.get_app_proc_time()}
+
+
+@app.post("/app/laser_test/start")
+def start_app_laser_power_test():
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    return {"response": _laser.do_laser_power_test()}
+
+
+@app.get("/app/laser_test/result")
+def get_app_laser_test_result():
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    return {"response": _laser.get_laser_test_result()}
+
+
+@app.get("/app/laser_test/data")
+def get_app_laser_test_data():
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    return {"response": _laser.get_laser_test_data()}
+
+
+@app.get("/app/fw_version")
+def get_app_fw_version():
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    return {"response": _laser.get_fw_version()}
+
+
+@app.get("/app/hw_version")
+def get_app_hw_version():
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    return {"response": _laser.get_hw_version()}
+
+
+@app.get("/app/state")
+def get_app_state():
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    return {"response": _laser.get_app_state()}
+
+
+@app.get("/app/last_error")
+def get_app_last_error():
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    return {"response": _laser.get_app_last_error()}
+
+
+@app.post("/app/clear_error")
+def clear_app_last_error():
+    global _red_dot_enabled
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    resp = _laser.clear_app_error()
+    _red_dot_enabled = False
+    return {"response": resp}
+
+
+@app.post("/app/raw_command")
+def app_raw_command(payload: RawCommandRequest):
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+
+    command = str(payload.command).strip()
+    if not command:
+        return JSONResponse(status_code=400, content={"error": "Command is empty"})
+
+    response = _laser.send_raw_command(command)
+    _drain_async_messages()
+    return {"command": command, "response": response}
+
+
+@app.get("/seq/status")
+def get_sequence_status():
+    if _target is None:
+        return JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
+
+    _drain_async_messages()
+    state = _target.get_state()
+    last_error = _target.get_last_error()
+
+    with _sequence_lock:
+        events = list(_sequence_events)
+
+    return {
+        "state": state,
+        "last_error": last_error,
+        "events": events,
+    }
+
+
+@app.get("/seq/events")
+def get_sequence_events():
+    if _target is None:
+        return JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
+
+    _drain_async_messages()
+
+    with _sequence_lock:
+        events = list(_sequence_events)
+
+    return {"events": events}
 
 
 @app.get("/sse/galvo_pos")
@@ -526,6 +842,22 @@ def stop_walking():
 
 
 # ==================== Laser Control ====================
+@app.post("/laser/arm_en")
+def set_laser_arm_enabled(enabled: bool = Query(...)):
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    resp = _laser.set_arm_enabled(enabled)
+    return {"response": resp, "enabled": enabled}
+
+
+@app.get("/laser/arm_en")
+def get_laser_arm_enabled():
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    resp = _laser.get_arm_enabled()
+    return {"response": resp}
+
+
 @app.post("/laser/arm")
 def arm_laser():
     if _laser is None:
@@ -550,11 +882,49 @@ def ack_errors():
     return {"response": resp}
 
 
+@app.post("/laser/clear_error")
+def clear_laser_error():
+    global _red_dot_enabled
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    resp = _laser.clear_error()
+    _red_dot_enabled = False
+    return {"response": resp}
+
+
+@app.get("/laser/last_error")
+def get_laser_last_error():
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    resp = _laser.get_last_error()
+    return {"response": resp}
+
+
 @app.post("/laser/pwr")
 def set_laser_pwr(laser_id: int = Query(...), pwr: int = Query(...)):
     if _laser is None:
         return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
     resp = _laser.set_laser_pwr(laser_id, pwr)
+    return {"response": resp}
+
+
+@app.post("/laser/channel_pwr")
+def set_laser_channel_power(
+    p808: int = Query(...),
+    p980: int = Query(...),
+    p1064: int = Query(...),
+):
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    resp = _laser.set_channel_power(p808, p980, p1064)
+    return {"response": resp, "power": {"p808": p808, "p980": p980, "p1064": p1064}}
+
+
+@app.get("/laser/channel_pwr")
+def get_laser_channel_power():
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    resp = _laser.get_channel_power()
     return {"response": resp}
 
 
@@ -589,6 +959,20 @@ def get_laser_temp():
     return {"temp": raw}
 
 
+@app.get("/sensors/values")
+def get_sensor_values():
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    resp = _laser.get_sensor_values()
+    values = resp.get("values")
+    if values is None:
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Failed to parse sensor values", "raw": resp.get("raw", [])},
+        )
+    return {"values": values, "raw": resp.get("raw", [])}
+
+
 @app.post("/laser/pulse")
 def set_las_pulse(pulse_ms: int = Query(...)):
     if _target is None:
@@ -605,6 +989,56 @@ def set_red_dot(enabled: bool = Query(...)):
     resp = _laser.set_red_dot(enabled)
     _red_dot_enabled = enabled
     return {"response": resp, "enabled": enabled}
+
+
+@app.post("/laser/red_dot_en")
+def set_laser_red_dot_enabled(enabled: bool = Query(...)):
+    global _red_dot_enabled
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    resp = _laser.set_red_dot(enabled)
+    _red_dot_enabled = enabled
+    return {"response": resp, "enabled": enabled}
+
+
+@app.get("/laser/red_dot_en")
+def get_laser_red_dot_enabled():
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    resp = _laser.get_red_dot_enabled()
+    return {"response": resp}
+
+
+@app.post("/laser/fire")
+def fire_laser(duration_ms: int = Query(...)):
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    resp = _laser.fire(duration_ms)
+    return {"response": resp, "duration_ms": duration_ms}
+
+
+@app.post("/laser/stop")
+def stop_laser():
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    resp = _laser.stop()
+    return {"response": resp}
+
+
+@app.get("/laser/is_active")
+def get_laser_is_active():
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    resp = _laser.is_active()
+    return {"response": resp}
+
+
+@app.get("/laser/state")
+def get_laser_state():
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    resp = _laser.get_state()
+    return {"response": resp}
 
 
 # ==================== Sequence Control ====================

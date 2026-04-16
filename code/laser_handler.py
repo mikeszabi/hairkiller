@@ -71,6 +71,14 @@ class LaserInterface:
             return resp
         return self._send_cmd("APP_CLEAR_ERROR")
 
+    def set_arm_enabled(self, enabled: bool):
+        """Set arm state directly."""
+        return self._send_cmd("LASER_SET_ARM_EN", 1 if enabled else 0)
+
+    def get_arm_enabled(self):
+        """Get arm state directly."""
+        return self._send_cmd("LASER_GET_ARM_EN")
+
     def set_laser_pwr(self, laser_id: int, pwr: int):
         """Set one channel (1=1064, 2=980, 3=808, 4=all)."""
         pwr = _clamp(pwr, 0, 100)
@@ -96,6 +104,104 @@ class LaserInterface:
         red_dot_resp = self._send_cmd("LASER_SET_RED_DOT_EN", 1 if enabled else 0)
         return red_dot_resp
 
+    def get_red_dot_enabled(self):
+        """Get red dot state directly."""
+        return self._send_cmd("LASER_GET_RED_DOT_EN")
+
+    def set_channel_power(self, p808: int, p980: int, p1064: int):
+        """Set raw power triplet directly."""
+        self.channel_power = [
+            _clamp(int(p808), 0, 100),
+            _clamp(int(p980), 0, 100),
+            _clamp(int(p1064), 0, 100),
+        ]
+        return self._send_cmd("LASER_SET_CHANNEL_PWR", *self.channel_power)
+
+    def get_channel_power(self):
+        """Get raw power triplet directly."""
+        return self._send_cmd("LASER_GET_CHANNEL_PWR")
+
+    def fire(self, duration_ms: int):
+        """Fire the laser for a bounded duration."""
+        duration_ms = _clamp(int(duration_ms), 10, 1000)
+        return self._send_cmd("LASER_FIRE", duration_ms)
+
+    def stop(self):
+        """Stop laser firing immediately."""
+        return self._send_cmd("LASER_STOP")
+
+    def is_active(self):
+        """Check if the laser is currently firing."""
+        return self._send_cmd("LASER_IS_ACTIVE")
+
+    def get_state(self):
+        """Read the controller state."""
+        return self._send_cmd("LASER_GET_STATE")
+
+    def get_last_error(self):
+        """Read the last recorded laser error."""
+        return self._send_cmd("LASER_GET_LAST_ERROR")
+
+    def clear_error(self):
+        """Clear the last recorded laser error."""
+        return self._send_cmd("LASER_CLEAR_ERROR")
+
+    def get_app_state(self):
+        """Read the overall application state."""
+        return self._send_cmd("APP_GET_STATE")
+
+    def get_app_last_error(self):
+        """Read the last recorded application error."""
+        return self._send_cmd("APP_GET_LAST_ERROR")
+
+    def clear_app_error(self):
+        """Clear the last recorded application error."""
+        return self._send_cmd("APP_CLEAR_ERROR")
+
+    def app_ping(self):
+        return self._send_cmd("APP_PING")
+
+    def get_app_commands(self):
+        return self._send_cmd("APP_GET_COMMANDS")
+
+    def get_app_limits(self):
+        return self._send_cmd("APP_GET_LIMITS")
+
+    def app_reset(self):
+        return self._send_cmd("APP_RESET")
+
+    def get_app_proc_time(self):
+        return self._send_cmd("APP_GET_PROC_TIME")
+
+    def do_laser_power_test(self):
+        return self._send_cmd("APP_DO_LASER_PWR_TEST")
+
+    def get_laser_test_result(self):
+        return self._send_cmd("APP_GET_LASER_TEST_RESULT")
+
+    def get_laser_test_data(self):
+        return self._send_cmd("APP_GET_LASER_TEST_DATA")
+
+    def get_fw_version(self):
+        return self._send_cmd("APP_GET_FW_VERSION")
+
+    def get_hw_version(self):
+        return self._send_cmd("APP_GET_HW_VERSION")
+
+    def pop_async_messages(self):
+        """Return async serial messages observed since last read."""
+        return self.dev.pop_async_messages()
+
+    def send_raw_command(self, command: str):
+        """Send a raw serial command line as entered by the user."""
+        command = str(command).strip()
+        if not command:
+            return ["ERROR: empty command"]
+        try:
+            return self.dev.query(command, expect_prefix=None, extra_read_window_s=0.5)
+        except Exception as exc:  # pragma: no cover - runtime safety
+            return [f"ERROR: {exc}"]
+
     def set_las_curr(self, curr: int):
         """Set same current for all active channels."""
         curr = _clamp(curr, 0, 100)
@@ -118,6 +224,22 @@ class LaserInterface:
             return [mapping.get("laserTemp_C", "N/A")]
         except Exception:
             return resp
+
+    def get_sensor_values(self):
+        """Return a parsed sensor snapshot and raw response lines."""
+        resp = self._send_cmd("SENSORS_GET_VALUES")
+        if not resp:
+            return {"raw": resp, "values": None}
+        try:
+            values_line = next(
+                line for line in resp
+                if "->" in line and "END" not in line and "Count" not in line
+            )
+            payload = values_line.split("->", 1)[-1].strip().strip("[]")
+            values = [float(v) for v in payload.split(",") if v]
+            return {"raw": resp, "values": sensor_values_to_dict(values)}
+        except Exception:
+            return {"raw": resp, "values": None}
 
     def close(self):
         self.dev.close()

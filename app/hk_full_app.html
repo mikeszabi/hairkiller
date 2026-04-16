@@ -101,6 +101,7 @@
     input[type=checkbox] { cursor: pointer; width: auto; }
     input[type=range] { width: 60px; vertical-align: middle; }
     input[type=number] { width: 60px; padding: 3px; }
+    input[type=text] { width: 100%; padding: 4px 6px; }
     
     .info-line {
       margin: 3px 0;
@@ -198,6 +199,190 @@
       padding: 4px;
       resize: vertical;
     }
+
+    .section {
+      margin-bottom: 12px;
+      border: 1px solid #555;
+      border-radius: 4px;
+      overflow: hidden;
+      background: #333;
+    }
+
+    .section-header {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      background: #2a2a2a;
+      border: none;
+      border-bottom: 1px solid #444;
+      color: #0f0;
+      font-size: 12px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    .section-header:hover {
+      background: #353535;
+    }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .section-chevron {
+      color: #aaa;
+      font-size: 11px;
+      transition: transform 0.15s ease;
+    }
+
+    .section.collapsed .section-chevron {
+      transform: rotate(-90deg);
+    }
+
+    .section-body {
+      padding: 8px;
+    }
+
+    .section.collapsed .section-body {
+      display: none;
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
+      margin: 6px 0;
+    }
+
+    .mono {
+      font-family: monospace;
+    }
+
+    .sensor-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
+      margin-top: 6px;
+    }
+
+    .error-panel {
+      border-color: #7a2b2b;
+      background: #2e1d1d;
+    }
+
+    .error-summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+
+    .error-badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: bold;
+      color: #fff;
+      background: #666;
+    }
+
+    .error-badge.has-errors {
+      background: #aa0000;
+    }
+
+    .error-list {
+      max-height: 140px;
+      overflow-y: auto;
+      background: #181111;
+      border: 1px solid #5b3030;
+      border-radius: 2px;
+      padding: 4px;
+      margin-top: 6px;
+      font-size: 10px;
+      font-family: monospace;
+    }
+
+    .error-entry {
+      padding: 4px;
+      margin-bottom: 4px;
+      background: #352020;
+      border-left: 3px solid #aa0000;
+      border-radius: 2px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .error-entry.hard-fault {
+      border-left-color: #ff7a00;
+    }
+
+    .seq-badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: bold;
+      color: #fff;
+      background: #666;
+    }
+
+    .seq-badge.done {
+      background: #008a38;
+    }
+
+    .seq-badge.failed {
+      background: #aa0000;
+    }
+
+    .test-panel {
+      border-color: #355f63;
+      background: #1f2f31;
+    }
+
+    .test-result {
+      width: 100%;
+      height: 120px;
+      background: #172224;
+      color: #bffcff;
+      border: 1px solid #426b70;
+      font-family: monospace;
+      font-size: 10px;
+      padding: 6px;
+      resize: vertical;
+      margin-top: 6px;
+    }
+
+    .test-event-list {
+      max-height: 120px;
+      overflow-y: auto;
+      background: #162022;
+      border: 1px solid #35565b;
+      border-radius: 2px;
+      padding: 4px;
+      margin-top: 6px;
+      font-size: 10px;
+      font-family: monospace;
+    }
+
+    .test-event-entry {
+      padding: 4px;
+      margin-bottom: 4px;
+      background: #223539;
+      border-left: 3px solid #2aa7b6;
+      border-radius: 2px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .test-event-entry.watchdog {
+      border-left-color: #ff7a00;
+    }
   </style>
 </head>
 <body>
@@ -212,10 +397,15 @@
     </div>
     
     <div id="right">
-      
+
       <!-- DETECTION -->
-      <div class="panel">
-        <h2>🔍 DETECTION <span id="detStatus" class="status-badge status-idle">OFF</span></h2>
+      <div class="section" id="section-detection">
+        <button class="section-header" type="button" onclick="toggleSection('detection')">
+          <span class="section-title">🔍 DETECTION <span id="detStatus" class="status-badge status-idle">OFF</span></span>
+          <span class="section-chevron">▼</span>
+        </button>
+        <div class="section-body">
+        <div class="panel">
         <label>
           <input id="detectionToggle" type="checkbox" onchange="toggleDetection()"> 
           Detection On/OFF
@@ -228,38 +418,65 @@
         <div class="info-line">
           <span class="info-label">Points:</span> <span id="pointCount">0</span>
         </div>
+        <div class="info-line">
+          <span class="info-label">Live Count:</span> <span id="liveDetectionCount">0</span>
+        </div>
         <div class="grid-2">
           <button onclick="captureDetections()" class="small-btn">Capture POINTS</button>
           <button onclick="clearPoints()" class="small-btn">Clear</button>
         </div>
+        <button onclick="refreshDetectionStatus(true)" class="small-btn" style="width:100%;">Refresh Detection Status</button>
         <div class="points-list" id="pointsList">
           <span style="color: #888;">No points</span>
         </div>
       </div>
-      
+        </div>
+      </div>
+
       <!-- GALVO -->
-      <div class="panel">
-        <h2>📍 GALVO</h2>
+      <div class="section" id="section-galvo">
+        <button class="section-header" type="button" onclick="toggleSection('galvo')">
+          <span class="section-title">📍 GALVO</span>
+          <span class="section-chevron">▼</span>
+        </button>
+        <div class="section-body">
+        <div class="panel">
         <div class="info-line">
           <span class="info-label">Position:</span> X=<span id="galvoX">-</span> Y=<span id="galvoY">-</span>
         </div>
-        <button onclick="startWalking()" class="small-btn success-btn">TEST: GALVO TEST WALK</button>
+        <div class="grid-2">
+          <button onclick="refreshGalvoNow()" class="small-btn">Refresh Pos</button>
+          <button onclick="startWalking()" class="small-btn success-btn">TEST: GALVO TEST WALK</button>
+        </div>
       </div>
-      
+        </div>
+      </div>
+
       <!-- LASER -->
-      <div class="panel">
-        <h2>⚡ LASER</h2>
+      <div class="section" id="section-laser">
+        <button class="section-header" type="button" onclick="toggleSection('laser')">
+          <span class="section-title">⚡ LASER</span>
+          <span class="section-chevron">▼</span>
+        </button>
+        <div class="section-body">
+        <div class="panel">
         
         <!-- Safety -->
         <div style="margin: 4px 0;">
           <span class="info-label">Safety:</span>
           <span id="laserStatus" class="laser-status">DISARMED</span>
         </div>
+        <div class="status-grid">
+          <div class="info-line"><span class="info-label">Arm:</span> <span id="laserArmState" class="mono">-</span></div>
+          <div class="info-line"><span class="info-label">Red Dot:</span> <span id="laserRedDotState" class="mono">-</span></div>
+          <div class="info-line"><span class="info-label">Active:</span> <span id="laserActiveState" class="mono">-</span></div>
+          <div class="info-line"><span class="info-label">State:</span> <span id="laserStateValue" class="mono">-</span></div>
+        </div>
         <div class="grid-2">
           <button onclick="armLaser()" class="small-btn success-btn">ARM</button>
           <button onclick="disarmLaser()" class="small-btn danger-btn">DISARM</button>
         </div>
-        <button onclick="ackErrors()" class="small-btn warning-btn" style="width:100%;">ACK Errors</button>
+        <button onclick="refreshLaserStatus(true)" class="small-btn" style="width:100%;">Refresh Laser Status</button>
         
         <!-- Laser Settings -->
         <hr style="border-color:#555;margin:8px 0;" />
@@ -292,6 +509,14 @@
           </div>
         </div>
         
+        <div style="margin-top: 6px;">
+          <label class="info-label">Direct Fire (10-1000 ms):</label>
+          <div class="grid-2">
+            <input id="laserFireMs" type="number" min="10" max="1000" value="100">
+            <button onclick="fireLaserDirect()" class="small-btn danger-btn">FIRE NOW</button>
+          </div>
+        </div>
+        
         <!-- Fire Manual Target -->
         <hr style="border-color:#555;margin:8px 0;" />
         <h3 style="font-size:14px;margin:4px 0;color:#0f0;">Fire Manual Target</h3>
@@ -302,10 +527,25 @@
         </div>
         <div class="info-line" id="galvoTargetInfo"></div>
       </div>
-      
+        </div>
+      </div>
+
       <!-- SEQUENCE -->
-      <div class="panel">
-        <h2>🎯 SEQUENCE</h2>
+      <div class="section" id="section-sequence">
+        <button class="section-header" type="button" onclick="toggleSection('sequence')">
+          <span class="section-title">🎯 SEQUENCE <span id="seqFinishBadge" class="seq-badge">IDLE</span></span>
+          <span class="section-chevron">▼</span>
+        </button>
+        <div class="section-body">
+        <div class="panel">
+        <div class="status-grid">
+          <div class="info-line"><span class="info-label">State:</span> <span id="seqStateValue" class="mono">-</span></div>
+          <div class="info-line"><span class="info-label">Last Finish:</span> <span id="seqLastFinish" class="mono">-</span></div>
+        </div>
+        <div class="info-line">
+          <span class="info-label">Last Seq Error:</span> <span id="seqLastError" class="mono">-</span>
+        </div>
+        <button onclick="refreshSequenceStatus(true)" class="small-btn" style="width:100%;">Refresh Sequence Status</button>
         
         <!-- Use captured points -->
         <div class="info-line" style="font-size:11px;color:#aaa;">
@@ -339,13 +579,139 @@
           <span></span>
         </div>
       </div>
-      
+        </div>
+      </div>
+
+      <!-- Test -->
+      <div class="section" id="section-test">
+        <button class="section-header" type="button" onclick="toggleSection('test')">
+          <span class="section-title">🧪 TEST</span>
+          <span class="section-chevron">▼</span>
+        </button>
+        <div class="section-body">
+        <div class="panel test-panel">
+        <div class="status-grid">
+          <div class="info-line"><span class="info-label">App State:</span> <span id="testAppState" class="mono">-</span></div>
+          <div class="info-line"><span class="info-label">Proc Time:</span> <span id="testProcTime" class="mono">-</span></div>
+          <div class="info-line"><span class="info-label">FW:</span> <span id="testFwVersion" class="mono">-</span></div>
+          <div class="info-line"><span class="info-label">HW:</span> <span id="testHwVersion" class="mono">-</span></div>
+          <div class="info-line"><span class="info-label">Laser Test:</span> <span id="testLaserResult" class="mono">-</span></div>
+          <div class="info-line"><span class="info-label">Last App Error:</span> <span id="testLastError" class="mono">-</span></div>
+        </div>
+        <button onclick="refreshTestPanel(true)" class="small-btn" style="width:100%;">Refresh Test Status</button>
+        <div style="margin-top: 6px;">
+          <label class="info-label">Raw Serial Command:</label>
+          <div class="grid-2">
+            <input id="rawSerialCommand" type="text" placeholder="APP_PING or TARGET_GET_STATE">
+            <button onclick="runRawSerialCommand()" class="small-btn success-btn">Execute</button>
+          </div>
+        </div>
+        <div class="grid-2">
+          <button onclick="runAppCommand('Ping', '/app/ping', 'POST')" class="small-btn">APP_PING</button>
+          <button onclick="runAppCommand('Commands', '/app/commands')" class="small-btn">APP_GET_COMMANDS</button>
+          <button onclick="runAppCommand('Limits', '/app/limits')" class="small-btn">APP_GET_LIMITS</button>
+          <button onclick="runAppCommand('Reset', '/app/reset', 'POST')" class="small-btn warning-btn">APP_RESET</button>
+          <button onclick="runAppCommand('Proc Time', '/app/proc_time')" class="small-btn">APP_GET_PROC_TIME</button>
+          <button onclick="runAppCommand('Power Test Start', '/app/laser_test/start', 'POST')" class="small-btn success-btn">APP_DO_LASER_PWR_TEST</button>
+          <button onclick="runAppCommand('Power Test Result', '/app/laser_test/result')" class="small-btn">APP_GET_LASER_TEST_RESULT</button>
+          <button onclick="runAppCommand('Power Test Data', '/app/laser_test/data')" class="small-btn">APP_GET_LASER_TEST_DATA</button>
+          <button onclick="runAppCommand('FW Version', '/app/fw_version')" class="small-btn">APP_GET_FW_VERSION</button>
+          <button onclick="runAppCommand('HW Version', '/app/hw_version')" class="small-btn">APP_GET_HW_VERSION</button>
+          <button onclick="runAppCommand('App State', '/app/state')" class="small-btn">APP_GET_STATE</button>
+          <button onclick="runAppCommand('App Last Error', '/app/last_error')" class="small-btn">APP_GET_LAST_ERROR</button>
+          <button onclick="runAppCommand('Clear App Error', '/app/clear_error', 'POST')" class="small-btn warning-btn">APP_CLEAR_ERROR</button>
+        </div>
+        <textarea id="testResultArea" class="test-result" readonly></textarea>
+        <div class="test-event-list" id="testEventList">
+          <span style="color: #999;">No async test events</span>
+        </div>
+      </div>
+        </div>
+      </div>
+
+      <!-- SENSORS -->
+      <div class="section collapsed" id="section-sensors">
+        <button class="section-header" type="button" onclick="toggleSection('sensors')">
+          <span class="section-title">🌡️ SENSORS</span>
+          <span class="section-chevron">▼</span>
+        </button>
+        <div class="section-body">
+        <div class="panel">
+        <div class="info-line">
+          <span class="info-label">Laser Temp:</span> <span id="laserTemp">-</span>
+        </div>
+        <div class="info-line">
+          <span class="info-label">Red Dot Detected:</span> X=<span id="dotX">-</span> Y=<span id="dotY">-</span>
+        </div>
+        <hr style="border-color:#555;margin:8px 0;" />
+        <div class="grid-2">
+          <button onclick="getCurrentSensorValues()" class="small-btn success-btn">Get Current Values</button>
+          <button onclick="updateSensorDisplay(true)" class="small-btn">Refresh Temp/Dot</button>
+        </div>
+        <div class="info-line"><span class="info-label">Timestamp:</span> <span id="sensorValuesTimestamp">-</span></div>
+        <div class="sensor-grid">
+          <div class="info-line"><span class="info-label">INPUT_CURR [mA]:</span> <span id="sensor_inputCurrent_mA">-</span></div>
+          <div class="info-line"><span class="info-label">LASER660_CURR [mA]:</span> <span id="sensor_laser660Curr_mA">-</span></div>
+          <div class="info-line"><span class="info-label">LASER808_CURR [mA]:</span> <span id="sensor_laser808Curr_mA">-</span></div>
+          <div class="info-line"><span class="info-label">LASER980_CURR [mA]:</span> <span id="sensor_laser980Curr_mA">-</span></div>
+          <div class="info-line"><span class="info-label">LASER1064_CURR [mA]:</span> <span id="sensor_laser1064Curr_mA">-</span></div>
+          <div class="info-line"><span class="info-label">LASER_POWER [mV]:</span> <span id="sensor_laserPower_mV">-</span></div>
+          <div class="info-line"><span class="info-label">LASER_TEMP [C]:</span> <span id="sensor_laserTemp_C">-</span></div>
+          <div class="info-line"><span class="info-label">PELTIER_VOLTAGE [mV]:</span> <span id="sensor_peltierVoltage_mV">-</span></div>
+          <div class="info-line"><span class="info-label">HEATSINK_TEMP [C]:</span> <span id="sensor_heatsinkTemp_C">-</span></div>
+          <div class="info-line"><span class="info-label">MOSFET_TEMP [C]:</span> <span id="sensor_mosfetTemp_C">-</span></div>
+          <div class="info-line"><span class="info-label">TARGET1_TEMP [C]:</span> <span id="sensor_target1Temp_C">-</span></div>
+          <div class="info-line"><span class="info-label">TARGET2_TEMP [C]:</span> <span id="sensor_target2Temp_C">-</span></div>
+          <div class="info-line"><span class="info-label">GALVO_POS_X [raw]:</span> <span id="sensor_galvoPosX_raw">-</span></div>
+          <div class="info-line"><span class="info-label">GALVO_POS_Y [raw]:</span> <span id="sensor_galvoPosY_raw">-</span></div>
+          <div class="info-line"><span class="info-label">LASER660_OFFSET [mA]:</span> <span id="sensor_laser660_offset_ma">-</span></div>
+          <div class="info-line"><span class="info-label">LASER808_OFFSET [mA]:</span> <span id="sensor_laser808_offset_ma">-</span></div>
+          <div class="info-line"><span class="info-label">LASER980_OFFSET [mA]:</span> <span id="sensor_laser980_offset_ma">-</span></div>
+          <div class="info-line"><span class="info-label">LASER1064_OFFSET [mA]:</span> <span id="sensor_laser1064_offset_ma">-</span></div>
+          <div class="info-line"><span class="info-label">UPDATE_TIMESTAMP [ms]:</span> <span id="sensor_updateTimestamp_ms">-</span></div>
+        </div>
+      </div>
+        </div>
+      </div>
+
+      <!-- Errors -->
+      <div class="section" id="section-errors">
+        <button class="section-header" type="button" onclick="toggleSection('errors')">
+          <span class="section-title">🚨 ERRORS <span id="errorBadge" class="error-badge">CLEAR</span></span>
+          <span class="section-chevron">▼</span>
+        </button>
+        <div class="section-body">
+        <div class="panel error-panel">
+        <div class="error-summary">
+          <div class="info-line" style="flex:1;">
+            <span class="info-label">App State:</span> <span id="appStateValue" class="mono">-</span>
+          </div>
+          <button onclick="ackErrors()" class="small-btn warning-btn">CLEAR Errors</button>
+        </div>
+        <div class="info-line">
+          <span class="info-label">Last Error:</span> <span id="appLastError" class="mono">-</span>
+        </div>
+        <button onclick="refreshAppErrors(true)" class="small-btn" style="width:100%;">Refresh Error Status</button>
+        <div class="error-list" id="errorList">
+          <span style="color: #999;">No async app errors</span>
+        </div>
+      </div>
+        </div>
+      </div>
+
       <!-- Status Log -->
-      <div class="panel">
-        <h2>📋 Log</h2>
+      <div class="section" id="section-log">
+        <button class="section-header" type="button" onclick="toggleSection('log')">
+          <span class="section-title">📋 LOG</span>
+          <span class="section-chevron">▼</span>
+        </button>
+        <div class="section-body">
+        <div class="panel">
         <textarea id="logArea" readonly></textarea>
       </div>
-      
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -356,6 +722,22 @@
     let walking = false;
     let isLaserArmed = false;
     let detectionSSE = null;
+    let knownErrorEventKeys = new Set();
+    let knownSequenceEventKeys = new Set();
+    let knownTestEventKeys = new Set();
+
+    function toggleSection(sectionName) {
+      const section = document.getElementById(`section-${sectionName}`);
+      if (!section) return;
+      section.classList.toggle('collapsed');
+    }
+
+    function responseText(response) {
+      if (Array.isArray(response)) return response.join(' ');
+      if (response === undefined || response === null) return '';
+      if (typeof response === 'object') return JSON.stringify(response);
+      return String(response);
+    }
     
     // ==================== SSE for Detection Count ====================
     function connectDetectionSSE() {
@@ -410,26 +792,375 @@
       console.log(msg);
       log(msg);
     }
+
+    function updateErrorBadge(hasErrors) {
+      const badge = document.getElementById('errorBadge');
+      if (!badge) return;
+      badge.textContent = hasErrors ? 'ACTIVE' : 'CLEAR';
+      badge.classList.toggle('has-errors', hasErrors);
+    }
+
+    function renderErrorEvents(events) {
+      const list = document.getElementById('errorList');
+      if (!list) return;
+
+      if (!events || events.length === 0) {
+        list.innerHTML = '<span style="color: #999;">No async app errors</span>';
+        return;
+      }
+
+      list.innerHTML = events.map((event) => {
+        const level = event.level === 'hard_fault' ? 'hard-fault' : 'error';
+        const title = event.level === 'hard_fault' ? 'HARD FAULT' : 'ERROR';
+        const body = event.message || '-';
+        return `<div class="error-entry ${level}"><strong>${title}</strong>\n${body}</div>`;
+      }).join('');
+    }
+
+    async function pollAppErrorEvents(logFailures = false) {
+      try {
+        const data = await fetchJson('/app/errors/events');
+        const events = Array.isArray(data.events) ? data.events : [];
+
+        renderErrorEvents(events);
+        updateErrorBadge(events.length > 0);
+
+        for (const event of events) {
+          const key = `${event.timestamp || ''}:${event.message || ''}`;
+          if (!knownErrorEventKeys.has(key)) {
+            knownErrorEventKeys.add(key);
+            updateLog(`Async app ${event.level === 'hard_fault' ? 'hard fault' : 'error'}: ${event.message}`);
+          }
+        }
+      } catch (err) {
+        if (logFailures) updateLog(`Error event polling failed: ${err.message || err}`);
+      }
+    }
+
+    async function refreshAppErrors(logFailures = false) {
+      try {
+        const data = await fetchJson('/app/errors');
+        const stateText = responseText(data.state?.response) || '-';
+        const lastErrorText = responseText(data.last_error?.response) || '-';
+        const events = Array.isArray(data.events) ? data.events : [];
+
+        document.getElementById('appStateValue').textContent = stateText;
+        document.getElementById('appLastError').textContent = lastErrorText;
+        renderErrorEvents(events);
+        updateErrorBadge(events.length > 0 || (lastErrorText && lastErrorText !== '-'));
+
+        for (const event of events) {
+          const key = `${event.timestamp || ''}:${event.message || ''}`;
+          if (!knownErrorEventKeys.has(key)) {
+            knownErrorEventKeys.add(key);
+            updateLog(`Async app ${event.level === 'hard_fault' ? 'hard fault' : 'error'}: ${event.message}`);
+          }
+        }
+      } catch (err) {
+        if (logFailures) updateLog(`Error panel refresh failed: ${err.message || err}`);
+      }
+    }
+
+    function updateSequenceBadge(status) {
+      const badge = document.getElementById('seqFinishBadge');
+      if (!badge) return;
+      const normalized = String(status || 'IDLE').toUpperCase();
+      badge.textContent = normalized;
+      badge.classList.remove('done', 'failed');
+      if (normalized === 'OK') {
+        badge.classList.add('done');
+      } else if (normalized === 'NOK') {
+        badge.classList.add('failed');
+      }
+    }
+
+    async function pollSequenceEvents(logFailures = false) {
+      try {
+        const data = await fetchJson('/seq/events');
+        const events = Array.isArray(data.events) ? data.events : [];
+        const latestEvent = events.length > 0 ? events[0] : null;
+
+        document.getElementById('seqLastFinish').textContent = latestEvent ? (latestEvent.message || '-') : '-';
+        updateSequenceBadge(latestEvent ? latestEvent.status : 'IDLE');
+
+        for (const event of events) {
+          const key = `${event.timestamp || ''}:${event.message || ''}`;
+          if (!knownSequenceEventKeys.has(key)) {
+            knownSequenceEventKeys.add(key);
+            updateLog(`Async sequence finished: ${event.message}`);
+          }
+        }
+      } catch (err) {
+        if (logFailures) updateLog(`Sequence event polling failed: ${err.message || err}`);
+      }
+    }
+
+    async function refreshSequenceStatus(logFailures = false) {
+      try {
+        const data = await fetchJson('/seq/status');
+        const stateText = responseText(data.state?.response) || '-';
+        const lastErrorText = responseText(data.last_error?.response) || '-';
+        const events = Array.isArray(data.events) ? data.events : [];
+        const latestEvent = events.length > 0 ? events[0] : null;
+
+        document.getElementById('seqStateValue').textContent = stateText;
+        document.getElementById('seqLastError').textContent = lastErrorText;
+        document.getElementById('seqLastFinish').textContent = latestEvent ? (latestEvent.message || '-') : '-';
+        updateSequenceBadge(latestEvent ? latestEvent.status : 'IDLE');
+
+        for (const event of events) {
+          const key = `${event.timestamp || ''}:${event.message || ''}`;
+          if (!knownSequenceEventKeys.has(key)) {
+            knownSequenceEventKeys.add(key);
+            updateLog(`Async sequence finished: ${event.message}`);
+          }
+        }
+      } catch (err) {
+        if (logFailures) updateLog(`Sequence panel refresh failed: ${err.message || err}`);
+      }
+    }
+
+    function setTestResult(title, payload) {
+      const area = document.getElementById('testResultArea');
+      if (!area) return;
+      const rendered = typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2);
+      area.value = `${title}\n\n${rendered}`;
+    }
+
+    function renderTestEvents(events) {
+      const list = document.getElementById('testEventList');
+      if (!list) return;
+
+      if (!events || events.length === 0) {
+        list.innerHTML = '<span style="color: #999;">No async test events</span>';
+        return;
+      }
+
+      list.innerHTML = events.map((event) => {
+        const kindClass = event.kind === 'watchdog' ? 'watchdog' : 'laser-test';
+        const title = event.kind === 'watchdog' ? 'WATCHDOG' : `LASER TEST ${String(event.status || '').toUpperCase()}`;
+        return `<div class="test-event-entry ${kindClass}"><strong>${title}</strong>\n${event.message || '-'}</div>`;
+      }).join('');
+    }
+
+    async function pollTestEvents(logFailures = false) {
+      try {
+        const data = await fetchJson('/app/test/events');
+        const events = Array.isArray(data.events) ? data.events : [];
+
+        renderTestEvents(events);
+
+        for (const event of events) {
+          const key = `${event.timestamp || ''}:${event.message || ''}`;
+          if (!knownTestEventKeys.has(key)) {
+            knownTestEventKeys.add(key);
+            updateLog(`Async test event: ${event.message}`);
+          }
+        }
+      } catch (err) {
+        if (logFailures) updateLog(`Test event polling failed: ${err.message || err}`);
+      }
+    }
+
+    async function refreshTestPanel(logFailures = false) {
+      try {
+        const data = await fetchJson('/app/test/status');
+        const stateText = responseText(data.state?.response) || '-';
+        const procTimeText = responseText(data.proc_time?.response) || '-';
+        const fwText = responseText(data.fw_version?.response) || '-';
+        const hwText = responseText(data.hw_version?.response) || '-';
+        const laserTestText = responseText(data.laser_test_result?.response) || '-';
+        const lastErrorText = responseText(data.last_error?.response) || '-';
+        const events = Array.isArray(data.events) ? data.events : [];
+
+        document.getElementById('testAppState').textContent = stateText;
+        document.getElementById('testProcTime').textContent = procTimeText;
+        document.getElementById('testFwVersion').textContent = fwText;
+        document.getElementById('testHwVersion').textContent = hwText;
+        document.getElementById('testLaserResult').textContent = laserTestText;
+        document.getElementById('testLastError').textContent = lastErrorText;
+        renderTestEvents(events);
+
+        for (const event of events) {
+          const key = `${event.timestamp || ''}:${event.message || ''}`;
+          if (!knownTestEventKeys.has(key)) {
+            knownTestEventKeys.add(key);
+            updateLog(`Async test event: ${event.message}`);
+          }
+        }
+      } catch (err) {
+        if (logFailures) updateLog(`Test panel refresh failed: ${err.message || err}`);
+      }
+    }
+
+    async function runAppCommand(title, path, method = 'GET') {
+      updateLog(`Running ${title}...`);
+      try {
+        const data = await fetchJson(path, { method });
+        setTestResult(title, data.response ?? data);
+        updateLog(`${title} response received`);
+        await refreshAppErrors();
+        await refreshTestPanel();
+      } catch (err) {
+        setTestResult(`${title} failed`, String(err));
+        updateLog(`${title} failed: ${err}`);
+      }
+    }
+
+    async function runRawSerialCommand() {
+      const input = document.getElementById('rawSerialCommand');
+      const command = input ? input.value.trim() : '';
+      if (!command) {
+        setTestResult('Raw Command failed', 'Command is empty');
+        return;
+      }
+
+      updateLog(`Running raw serial command: ${command}`);
+      try {
+        const data = await fetchJson('/app/raw_command', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command }),
+        });
+        setTestResult(`Raw Command: ${command}`, data.response ?? data);
+        await refreshAppErrors();
+        await refreshSequenceStatus();
+        await refreshTestPanel();
+      } catch (err) {
+        setTestResult(`Raw Command failed: ${command}`, String(err));
+        updateLog(`Raw serial command failed: ${err}`);
+      }
+    }
+
+    async function fetchJson(path, options = {}) {
+      const res = await fetch(`${API}${path}`, options);
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || JSON.stringify(data));
+      }
+      return data;
+    }
     
     // ==================== Galvo ====================
     async function updateGalvoDisplay() {
       try {
-        const res = await fetch(`${API}/mover/pos`);
-        const data = await res.json();
+        const data = await fetchJson('/mover/pos');
         document.getElementById('galvoX').textContent = data.x || '-';
         document.getElementById('galvoY').textContent = data.y || '-';
       } catch (err) {
         console.error("Error fetching galvo pos:", err);
       }
     }
-    setInterval(updateGalvoDisplay, 500);
+
+    async function refreshGalvoNow() {
+      await updateGalvoDisplay();
+    }
+
+    async function refreshLaserStatus(logFailures = false) {
+      try {
+        const [arm, redDot, active, state] = await Promise.all([
+          fetchJson('/laser/arm_en'),
+          fetchJson('/laser/red_dot_en'),
+          fetchJson('/laser/is_active'),
+          fetchJson('/laser/state'),
+        ]);
+
+        const armText = responseText(arm.response);
+        const redDotText = responseText(redDot.response);
+        const activeText = responseText(active.response);
+        const stateText = responseText(state.response);
+
+        const armed = armText.includes('1');
+        isLaserArmed = armed;
+        document.getElementById('laserStatus').textContent = armed ? 'ARMED' : 'DISARMED';
+        document.getElementById('laserStatus').className = armed ? 'laser-armed' : 'laser-status';
+        document.getElementById('laserArmState').textContent = armText || '-';
+        document.getElementById('laserRedDotState').textContent = redDotText || '-';
+        document.getElementById('laserActiveState').textContent = activeText || '-';
+        document.getElementById('laserStateValue').textContent = stateText || '-';
+
+        const redDotEnabled = redDotText.includes('1');
+        document.getElementById('l660').checked = redDotEnabled;
+      } catch (err) {
+        if (logFailures) updateLog(`Laser status refresh failed: ${err.message || err}`);
+      }
+    }
+
+    async function updateSensorDisplay(logFailures = false) {
+      try {
+        const [tempData, dotData] = await Promise.all([
+          fetchJson('/laser/temp'),
+          fetchJson('/dot'),
+        ]);
+        document.getElementById('laserTemp').textContent = tempData.temp ?? '-';
+        document.getElementById('dotX').textContent = dotData.x ?? '-';
+        document.getElementById('dotY').textContent = dotData.y ?? '-';
+      } catch (err) {
+        if (logFailures) updateLog(`Sensor refresh failed: ${err.message || err}`);
+      }
+    }
+    setInterval(() => pollAppErrorEvents(false), 1200);
+    setInterval(() => pollSequenceEvents(false), 1200);
+    setInterval(() => pollTestEvents(false), 1500);
+
+    function setSensorValue(id, value) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = value ?? '-';
+    }
+
+    async function getCurrentSensorValues() {
+      try {
+        const data = await fetchJson('/sensors/values');
+        const values = data.values || {};
+        setSensorValue('sensor_inputCurrent_mA', values.inputCurrent_mA);
+        setSensorValue('sensor_laser660Curr_mA', values.laser660Curr_mA);
+        setSensorValue('sensor_laser808Curr_mA', values.laser808Curr_mA);
+        setSensorValue('sensor_laser980Curr_mA', values.laser980Curr_mA);
+        setSensorValue('sensor_laser1064Curr_mA', values.laser1064Curr_mA);
+        setSensorValue('sensor_laserPower_mV', values.laserPower_mV);
+        setSensorValue('sensor_laserTemp_C', values.laserTemp_C);
+        setSensorValue('sensor_peltierVoltage_mV', values.peltierVoltage_mV);
+        setSensorValue('sensor_heatsinkTemp_C', values.heatsinkTemp_C);
+        setSensorValue('sensor_mosfetTemp_C', values.mosfetTemp_C);
+        setSensorValue('sensor_target1Temp_C', values.target1Temp_C);
+        setSensorValue('sensor_target2Temp_C', values.target2Temp_C);
+        setSensorValue('sensor_galvoPosX_raw', values.galvoPosX_raw);
+        setSensorValue('sensor_galvoPosY_raw', values.galvoPosY_raw);
+        setSensorValue('sensor_laser660_offset_ma', values.laser660_offset_ma);
+        setSensorValue('sensor_laser808_offset_ma', values.laser808_offset_ma);
+        setSensorValue('sensor_laser980_offset_ma', values.laser980_offset_ma);
+        setSensorValue('sensor_laser1064_offset_ma', values.laser1064_offset_ma);
+        setSensorValue('sensor_updateTimestamp_ms', values.updateTimestamp_ms);
+        setSensorValue('sensorValuesTimestamp', values.updateTimestamp_ms);
+        updateLog('Sensor values updated');
+      } catch (err) {
+        updateLog(`Sensor values fetch failed: ${err.message || err}`);
+      }
+    }
     
     // ==================== Detection ====================
+    async function refreshDetectionStatus(logFailures = false) {
+      try {
+        const data = await fetchJson('/detection/status');
+        if (data) {
+          document.getElementById('detectionToggle').checked = !!data.detection_enabled;
+          document.getElementById('detStatus').textContent = data.detection_enabled ? 'ON' : 'OFF';
+          document.getElementById('detStatus').className = 'status-badge ' + (data.detection_enabled ? 'status-active' : 'status-idle');
+          if (data.conf !== undefined) {
+            document.getElementById('confVal').textContent = Number(data.conf).toFixed(2);
+            document.getElementById('confRange').value = Number(data.conf).toFixed(2);
+          }
+        }
+      } catch (err) {
+        if (logFailures) updateLog(`Detection status refresh failed: ${err.message || err}`);
+      }
+    }
+
     async function toggleDetection() {
       const checked = document.getElementById('detectionToggle').checked;
       try {
-        const res = await fetch(`${API}/detection/toggle?enabled=${checked}`, {method: 'POST'});
-        const data = await res.json();
+        await fetchJson(`/detection/toggle?enabled=${checked}`, {method: 'POST'});
         detectionOn = checked;
         document.getElementById('detStatus').textContent = checked ? 'ON' : 'OFF';
         document.getElementById('detStatus').className = 'status-badge ' + (checked ? 'status-active' : 'status-idle');
@@ -443,8 +1174,7 @@
       const val = Number(v);
       document.getElementById('confVal').textContent = val.toFixed(2);
       try {
-        const res = await fetch(`${API}/detection/conf?conf=${val}`, { method: 'POST' });
-        const data = await res.json();
+        const data = await fetchJson(`/detection/conf?conf=${val}`, { method: 'POST' });
         if (data && data.conf !== undefined) {
           document.getElementById('confVal').textContent = Number(data.conf).toFixed(2);
         }
@@ -457,8 +1187,7 @@
     async function captureDetections() {
       updateLog('Capturing...');
       try {
-        const res = await fetch(`${API}/detection/capture`, {method: 'POST'});
-        const data = await res.json();
+        const data = await fetchJson('/detection/capture', {method: 'POST'});
         const count = data.captured || 0;
         document.getElementById('pointCount').textContent = count;
         // automatically sync seq length to number of points
@@ -466,7 +1195,7 @@
         // also tell backend about the length immediately
         if (count > 0) {
           try {
-            await fetch(`${API}/seq/length?length=${count}`, {method: 'POST'});
+            await fetchJson(`/seq/length?length=${count}`, {method: 'POST'});
             updateLog(`Server sequence length set to ${count}`);
           } catch (e) {
             updateLog(`Failed to auto-set seq length: ${e}`);
@@ -494,7 +1223,7 @@
     
     async function clearPoints() {
       try {
-        const res = await fetch(`${API}/points/clear`, {method: 'POST'});
+        await fetchJson('/points/clear', {method: 'POST'});
         document.getElementById('pointCount').textContent = '0';
         updatePointsList([]);
         updateLog('Points cleared');
@@ -507,8 +1236,7 @@
     async function startWalking() {
       updateLog('Starting walk...');
       try {
-        const res = await fetch(`${API}/walk/start`, {method: 'POST'});
-        const data = await res.json();
+        const data = await fetchJson('/walk/start', {method: 'POST'});
         if (data.error) {
           updateLog(`Walk error: ${data.error}`);
         } else {
@@ -523,7 +1251,7 @@
     async function stopWalking() {
       updateLog('Stopping walk...');
       try {
-        await fetch(`${API}/walk/stop`, {method: 'POST'});
+        await fetchJson('/walk/stop', {method: 'POST'});
       } catch (err) {
         updateLog(`Stop failed: ${err}`);
       }
@@ -533,12 +1261,9 @@
     async function armLaser() {
       updateLog('Arming laser...');
       try {
-        const res = await fetch(`${API}/laser/arm`, {method: 'POST'});
-        const data = await res.json();
-        updateLog(`Arm response: ${data.response.join(' ')}`);
-        document.getElementById('laserStatus').textContent = 'ARMED';
-        document.getElementById('laserStatus').className = 'laser-armed';
-        isLaserArmed = true;
+        const data = await fetchJson('/laser/arm', {method: 'POST'});
+        updateLog(`Arm response: ${responseText(data.response)}`);
+        await refreshLaserStatus();
       } catch (err) {
         updateLog(`Arm failed: ${err}`);
       }
@@ -547,12 +1272,9 @@
     async function disarmLaser() {
       updateLog('Disarming laser...');
       try {
-        const res = await fetch(`${API}/laser/disarm`, {method: 'POST'});
-        const data = await res.json();
-        updateLog(`Disarm response: ${data.response.join(' ')}`);
-        document.getElementById('laserStatus').textContent = 'DISARMED';
-        document.getElementById('laserStatus').className = 'laser-status';
-        isLaserArmed = false;
+        const data = await fetchJson('/laser/disarm', {method: 'POST'});
+        updateLog(`Disarm response: ${responseText(data.response)}`);
+        await refreshLaserStatus();
       } catch (err) {
         updateLog(`Disarm failed: ${err}`);
       }
@@ -561,9 +1283,13 @@
     async function ackErrors() {
       updateLog('Acknowledging errors...');
       try {
-        const res = await fetch(`${API}/laser/ack`, {method: 'POST'});
-        const data = await res.json();
-        updateLog(`Ack response: ${data.response.join(' ')}`);
+        const data = await fetchJson('/app/errors/clear', {method: 'POST'});
+        updateLog(`Ack response: ${responseText(data.response)}`);
+        knownErrorEventKeys = new Set();
+        renderErrorEvents([]);
+        updateErrorBadge(false);
+        document.getElementById('appLastError').textContent = '-';
+        await refreshAppErrors();
       } catch (err) {
         updateLog(`Ack failed: ${err}`);
       }
@@ -578,9 +1304,9 @@
       
       updateLog(`Setting active lasers: ${l1064},${l980},${l808},${l660}`);
       try {
-        const res = await fetch(`${API}/laser/active?l1064=${l1064}&l980=${l980}&l808=${l808}&l660=${l660}`, {method: 'POST'});
-        const data = await res.json();
-        updateLog(`Response: ${data.response.join(' ')}`);
+        const data = await fetchJson(`/laser/active?l1064=${l1064}&l980=${l980}&l808=${l808}&l660=${l660}`, {method: 'POST'});
+        updateLog(`Response: ${responseText(data.response)}`);
+        await refreshLaserStatus();
       } catch (err) {
         updateLog(`Failed: ${err}`);
       }
@@ -590,9 +1316,8 @@
       const curr = parseInt(document.getElementById('lasCurr').value);
       updateLog(`Setting laser current: ${curr}%`);
       try {
-        const res = await fetch(`${API}/laser/current?curr=${curr}`, {method: 'POST'});
-        const data = await res.json();
-        updateLog(`Response: ${data.response.join(' ')}`);
+        const data = await fetchJson(`/laser/current?curr=${curr}`, {method: 'POST'});
+        updateLog(`Response: ${responseText(data.response)}`);
       } catch (err) {
         updateLog(`Failed: ${err}`);
       }
@@ -602,11 +1327,22 @@
       const pulse = parseInt(document.getElementById('lasPulse').value);
       updateLog(`Setting laser pulse: ${pulse}ms`);
       try {
-        const res = await fetch(`${API}/laser/pulse?pulse_ms=${pulse}`, {method: 'POST'});
-        const data = await res.json();
-        updateLog(`Response: ${data.response.join(' ')}`);
+        const data = await fetchJson(`/laser/pulse?pulse_ms=${pulse}`, {method: 'POST'});
+        updateLog(`Response: ${responseText(data.response)}`);
       } catch (err) {
         updateLog(`Failed: ${err}`);
+      }
+    }
+
+    async function fireLaserDirect() {
+      const duration = parseInt(document.getElementById('laserFireMs').value);
+      updateLog(`Direct laser fire for ${duration}ms`);
+      try {
+        const data = await fetchJson(`/laser/fire?duration_ms=${duration}`, {method: 'POST'});
+        updateLog(`Response: ${responseText(data.response)}`);
+        await refreshLaserStatus();
+      } catch (err) {
+        updateLog(`Direct fire failed: ${err}`);
       }
     }
     
@@ -645,7 +1381,7 @@
       if (!isLaserArmed) {
         updateLog(`Laser not armed, moving to image coords ${targetGalvoPt[0]},${targetGalvoPt[1]} only`);
         try {
-          await fetch(`${API}/mover/move_image?x=${targetGalvoPt[0]}&y=${targetGalvoPt[1]}`, {method: 'POST'});
+          await fetchJson(`/mover/move_image?x=${targetGalvoPt[0]}&y=${targetGalvoPt[1]}`, {method: 'POST'});
           updateLog('Galvo moved');
         } catch (err) {
           updateLog(`Move failed: ${err}`);
@@ -654,18 +1390,17 @@
       }
       updateLog(`Firing single target at image coords ${targetGalvoPt[0]},${targetGalvoPt[1]} (${test ? 'TEST' : 'LIVE'})`);
       try {
-        const res = await fetch(`${API}/mover/move_image?x=${targetGalvoPt[0]}&y=${targetGalvoPt[1]}`, {method: 'POST'});
-        const data = await res.json();
+        const data = await fetchJson(`/mover/move_image?x=${targetGalvoPt[0]}&y=${targetGalvoPt[1]}`, {method: 'POST'});
         if (data.error) {
           updateLog(`Move error: ${data.error}`);
           return;
         }
-        await fetch(`${API}/seq/length?length=1`, {method: 'POST'});
-        await fetch(`${API}/seq/target?idx=0&x=${data.x}&y=${data.y}`, {method: 'POST'});
+        const [tx, ty] = Array.isArray(data.target) ? data.target : [data.x, data.y];
+        await fetchJson('/seq/length?length=1', {method: 'POST'});
+        await fetchJson(`/seq/target?idx=0&x=${tx}&y=${ty}`, {method: 'POST'});
         const url = test ? `${API}/seq/start_test` : `${API}/seq/start`;
-        const fireRes = await fetch(url, {method: 'POST'});
-        const fireData = await fireRes.json();
-        updateLog(`Response: ${fireData.response.join(' ')}`);
+        const fireData = await fetchJson(url.replace(API, ''), {method: 'POST'});
+        updateLog(`Response: ${responseText(fireData.response)}`);
       } catch (err) {
         updateLog(`Fire target failed: ${err}`);
       }
@@ -677,9 +1412,8 @@
       const len = parseInt(document.getElementById('seqLen').value);
       updateLog(`Setting sequence length: ${len}`);
       try {
-        const res = await fetch(`${API}/seq/length?length=${len}`, {method: 'POST'});
-        const data = await res.json();
-        updateLog(`Response: ${data.response.join(' ')}`);
+        const data = await fetchJson(`/seq/length?length=${len}`, {method: 'POST'});
+        updateLog(`Response: ${responseText(data.response)}`);
       } catch (err) {
         updateLog(`Failed: ${err}`);
       }
@@ -688,9 +1422,9 @@
     async function startSeq() {
       updateLog('Starting sequence (LIVE)...');
       try {
-        const res = await fetch(`${API}/seq/start`, {method: 'POST'});
-        const data = await res.json();
-        updateLog(`Response: ${data.response.join(' ')}`);
+        const data = await fetchJson('/seq/start', {method: 'POST'});
+        updateLog(`Response: ${responseText(data.response)}`);
+        updateSequenceBadge('RUN');
       } catch (err) {
         updateLog(`Failed: ${err}`);
       }
@@ -699,9 +1433,9 @@
     async function startSeqTest() {
       updateLog('Starting sequence (TEST)...');
       try {
-        const res = await fetch(`${API}/seq/start_test`, {method: 'POST'});
-        const data = await res.json();
-        updateLog(`Response: ${data.response.join(' ')}`);
+        const data = await fetchJson('/seq/start_test', {method: 'POST'});
+        updateLog(`Response: ${responseText(data.response)}`);
+        updateSequenceBadge('RUN');
       } catch (err) {
         updateLog(`Failed: ${err}`);
       }
@@ -710,9 +1444,9 @@
     async function stopSeq() {
       updateLog('Stopping sequence...');
       try {
-        const res = await fetch(`${API}/seq/stop`, {method: 'POST'});
-        const data = await res.json();
-        updateLog(`Response: ${data.response.join(' ')}`);
+        const data = await fetchJson('/seq/stop', {method: 'POST'});
+        updateLog(`Response: ${responseText(data.response)}`);
+        await refreshSequenceStatus();
       } catch (err) {
         updateLog(`Failed: ${err}`);
       }
@@ -721,9 +1455,9 @@
     async function haltSeq() {
       updateLog('Halting sequence...');
       try {
-        const res = await fetch(`${API}/seq/halt`, {method: 'POST'});
-        const data = await res.json();
-        updateLog(`Response: ${data.response.join(' ')}`);
+        const data = await fetchJson('/seq/halt', {method: 'POST'});
+        updateLog(`Response: ${responseText(data.response)}`);
+        await refreshSequenceStatus();
       } catch (err) {
         updateLog(`Failed: ${err}`);
       }
@@ -732,9 +1466,9 @@
     async function resumeSeq() {
       updateLog('Resuming sequence...');
       try {
-        const res = await fetch(`${API}/seq/resume`, {method: 'POST'});
-        const data = await res.json();
-        updateLog(`Response: ${data.response.join(' ')}`);
+        const data = await fetchJson('/seq/resume', {method: 'POST'});
+        updateLog(`Response: ${responseText(data.response)}`);
+        updateSequenceBadge('RUN');
       } catch (err) {
         updateLog(`Failed: ${err}`);
       }
@@ -749,8 +1483,7 @@
       }
       updateLog('🔥 FIRE WALK (TEST MODE)');
       try {
-        const res = await fetch(`${API}/fire/walk?test_mode=true`, {method: 'POST'});
-        const data = await res.json();
+        const data = await fetchJson('/fire/walk?test_mode=true', {method: 'POST'});
         if (data.error) {
           updateLog(`Error: ${data.error}`);
         } else {
@@ -775,8 +1508,7 @@
       
       updateLog('🔥 FIRE WALK (LIVE MODE)');
       try {
-        const res = await fetch(`${API}/fire/walk?test_mode=false`, {method: 'POST'});
-        const data = await res.json();
+        const data = await fetchJson('/fire/walk?test_mode=false', {method: 'POST'});
         if (data.error) {
           updateLog(`Error: ${data.error}`);
         } else {
@@ -793,23 +1525,9 @@
       
       // Connect SSE for live detection count
       connectDetectionSSE();
-      
-      await updateGalvoDisplay();
-      try {
-        const res = await fetch(`${API}/detection/status`);
-        const data = await res.json();
-        if (data) {
-          document.getElementById('detectionToggle').checked = !!data.detection_enabled;
-          document.getElementById('detStatus').textContent = data.detection_enabled ? 'ON' : 'OFF';
-          document.getElementById('detStatus').className = 'status-badge ' + (data.detection_enabled ? 'status-active' : 'status-idle');
-          if (data.conf !== undefined) {
-            document.getElementById('confVal').textContent = Number(data.conf).toFixed(2);
-            document.getElementById('confRange').value = Number(data.conf).toFixed(2);
-          }
-        }
-      } catch (err) {
-        console.warn('Could not init detection', err);
-      }
+      await pollAppErrorEvents(true);
+      await pollSequenceEvents(true);
+      await pollTestEvents(true);
     })();
   </script>
 </body>

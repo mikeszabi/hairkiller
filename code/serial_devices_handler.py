@@ -7,6 +7,7 @@ from typing import List, Optional
 
 import serial
 from serial.tools import list_ports
+from serial_commands import is_async_message
 
 DEFAULT_PORT = '/dev/ttyACM0'
 DEFAULT_BAUD = 115200
@@ -25,6 +26,9 @@ class SerialDevice:
     timeout_s: float = DEFAULT_TIMEOUT_S
     eol: str = DEFAULT_EOL
     debug: bool = True
+
+    def __post_init__(self) -> None:
+        self._async_messages: List[str] = []
 
     def open(self) -> None:
         self.ser = serial.Serial(
@@ -61,8 +65,15 @@ class SerialDevice:
             except Exception:
                 s = str(raw)
             if s:
+                if is_async_message(s):
+                    self._async_messages.append(s)
                 lines.append(s)
         return lines
+
+    def pop_async_messages(self) -> List[str]:
+        messages = list(self._async_messages)
+        self._async_messages.clear()
+        return messages
 
     def query(
         self,
