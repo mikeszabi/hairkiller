@@ -96,6 +96,10 @@
     .small-button { padding: 4px 8px; font-size: 12px; }
     
     input[type=number] { width: 70px; padding: 4px; }
+
+    .status-on { color: #44ff44; font-weight: bold; }
+    .status-off { color: #ff6666; font-weight: bold; }
+    .status-unknown { color: #ffcc66; font-weight: bold; }
     
     /* ScrollBar styling */
     #right::-webkit-scrollbar {
@@ -119,7 +123,7 @@
   <div id="container">
     <div id="left">
       <div id="video-container">
-        <img id="cam" src="http://localhost:8000/frame/current" alt="camera stream" />
+        <img id="cam" src="" alt="camera stream" />
       </div>
     </div>
     
@@ -133,6 +137,28 @@
         </label>
         <div class="info-line">
           <span class="info-label">Dot in image:</span> X=<span id="dotImageX">-</span> Y=<span id="dotImageY">-</span>
+        </div>
+      </div>
+
+      <!-- Laser Panel -->
+      <div class="panel">
+        <div class="panel-title">Laser Control</div>
+        <div class="info-line">
+          <span class="info-label">ARM:</span> <span id="laserArmStatus" class="status-unknown">-</span>
+        </div>
+        <div class="info-line">
+          <span class="info-label">RED DOT:</span> <span id="laserRedDotStatus" class="status-unknown">-</span>
+        </div>
+        <div class="button-group">
+          <button onclick="armLaser()" class="small-button">ARM</button>
+          <button onclick="disarmLaser()" class="small-button">DISARM</button>
+        </div>
+        <div class="button-group">
+          <button onclick="setRedDot(true)" class="small-button">Red Dot ON</button>
+          <button onclick="setRedDot(false)" class="small-button">Red Dot OFF</button>
+        </div>
+        <div class="button-group">
+          <button onclick="refreshLaserStatus()" class="small-button">Refresh Laser Status</button>
         </div>
       </div>
       
@@ -195,6 +221,29 @@
   <script>
     const API = 'http://localhost:8000';
     const cam = document.getElementById('cam');
+    cam.src = `${API}/frame/current?t=${Date.now()}`;
+
+    const responseText = (resp) => {
+      if (Array.isArray(resp)) return resp.join(' | ');
+      if (resp == null) return '';
+      return String(resp);
+    };
+
+    const responseHasOne = (resp) => {
+      const text = responseText(resp);
+      return text.includes('->1') || text.includes('[1]') || text.endsWith(' 1');
+    };
+
+    const setStatus = (id, enabled, onText = 'ON', offText = 'OFF') => {
+      const el = document.getElementById(id);
+      if (enabled === null || enabled === undefined) {
+        el.textContent = '-';
+        el.className = 'status-unknown';
+        return;
+      }
+      el.textContent = enabled ? onText : offText;
+      el.className = enabled ? 'status-on' : 'status-off';
+    };
 
     // ==================== Detection & SSE ====================
     // SSE for red dot coordinates
@@ -219,6 +268,49 @@
       const res = await fetch(`${API}/calibration/detection/toggle?enabled=${checked}`, {method: 'POST'});
       const data = await res.json();
       console.log("Red dot detection toggled:", data);
+    };
+
+    // ==================== Laser Control ====================
+    const refreshLaserStatus = async () => {
+      try {
+        const [armRes, redDotRes] = await Promise.all([
+          fetch(`${API}/laser/arm_en`),
+          fetch(`${API}/laser/red_dot_en`),
+        ]);
+        const arm = await armRes.json();
+        const redDot = await redDotRes.json();
+
+        const armed = arm.armed ?? responseHasOne(arm.response);
+        const redDotEnabled = redDot.enabled ?? responseHasOne(redDot.response);
+
+        setStatus('laserArmStatus', armed, 'ARMED', 'DISARMED');
+        setStatus('laserRedDotStatus', redDotEnabled, 'ON', 'OFF');
+      } catch (err) {
+        console.error('Laser status refresh failed:', err);
+        setStatus('laserArmStatus', null);
+        setStatus('laserRedDotStatus', null);
+      }
+    };
+
+    const armLaser = async () => {
+      const res = await fetch(`${API}/laser/arm`, { method: 'POST' });
+      const data = await res.json();
+      console.log('Arm response:', data);
+      await refreshLaserStatus();
+    };
+
+    const disarmLaser = async () => {
+      const res = await fetch(`${API}/laser/disarm`, { method: 'POST' });
+      const data = await res.json();
+      console.log('Disarm response:', data);
+      await refreshLaserStatus();
+    };
+
+    const setRedDot = async (enabled) => {
+      const res = await fetch(`${API}/laser/red_dot_en?enabled=${enabled}`, { method: 'POST' });
+      const data = await res.json();
+      console.log('Red dot response:', data);
+      await refreshLaserStatus();
     };
 
     // ==================== Galvo Control ====================
@@ -317,6 +409,8 @@
         console.error('reload failed', err);
       }
     }
+
+    refreshLaserStatus();
   </script>
 </body>
 </html>

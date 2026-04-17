@@ -41,7 +41,6 @@ class GalvoInterface:
         self.dev.close()
 
     def get_position(self) -> Tuple[int, int]:
-        return
         return self._position_x, self._position_y
 
     def move_2_pos(self, x: int, y: int) -> Tuple[int, int]:

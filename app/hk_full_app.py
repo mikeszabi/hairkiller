@@ -5,7 +5,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 sys.path.append(str(Path(__file__).parent.parent / "code"))
 
 from fastapi import FastAPI, Query
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import time
 import cv2
@@ -142,6 +142,29 @@ print("[INFERENCE THREAD] Background worker started", flush=True)
 
 class RawCommandRequest(BaseModel):
     command: str
+
+
+def _parse_channel_power_response(lines):
+    if not isinstance(lines, list):
+        return None
+
+    for line in lines:
+        text = str(line).strip()
+        if "->" not in text:
+            continue
+        payload = text.split("->", 1)[1].strip().strip("[]")
+        parts = [part.strip() for part in payload.split(",")]
+        if len(parts) < 3:
+            continue
+        try:
+            p808 = int(float(parts[0]))
+            p980 = int(float(parts[1]))
+            p1064 = int(float(parts[2]))
+            return {"p808": p808, "p980": p980, "p1064": p1064}
+        except ValueError:
+            continue
+
+    return None
 
 
 def _record_app_error_event(raw_message: str) -> None:
@@ -285,6 +308,69 @@ def _generate_camera():
         buf = _turbo.encode(small, quality=70)
         yield b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + buf + b'\r\n'
         time.sleep(_cam_frame_window)
+
+
+@app.get("/")
+def root():
+    return FileResponse(Path(__file__).with_name("hk_full_app.html"))
+
+
+# ==================== Diagnostics ====================
+@app.get("/health")
+def health():
+    frame, idx, captured_ts = _uvc.read_with_meta()
+    ok = frame is not None
+    return {
+        "ok": ok,
+        "camera_ready": ok,
+        "laser_ready": _laser is not None,
+        "target_ready": _target is not None,
+        "galvo_ready": _galvo is not None,
+        "detector_ready": _detector is not None,
+        "homography_loaded": _homography is not None,
+        "last_frame_index": idx,
+        "frame_age_ms": None if captured_ts is None else (time.perf_counter() - captured_ts) * 1000.0,
+    }
+
+
+@app.get("/frame/meta")
+def frame_meta():
+    frame, idx, captured_ts = _uvc.read_with_meta()
+    if frame is None:
+        return JSONResponse(status_code=503, content={"ok": False, "error": "No frame available"})
+
+    height, width = frame.shape[:2]
+    return {
+        "ok": True,
+        "frame_index": idx,
+        "width": width,
+        "height": height,
+        "stream_width": _stream_w,
+        "stream_height": _stream_h,
+        "frame_age_ms": None if captured_ts is None else (time.perf_counter() - captured_ts) * 1000.0,
+    }
+
+
+@app.get("/stats")
+def stats():
+    return {
+        "ok": True,
+        "camera": _uvc.get_stats(),
+        "settings": _uvc.get_settings(),
+        "stream": {
+            "width": _stream_w,
+            "height": _stream_h,
+            "window_s": _cam_frame_window,
+        },
+        "detection_enabled": _hair_detection_enabled,
+        "detection_count": _last_detection_count,
+        "red_dot_detection_enabled": _red_dot_detection_enabled,
+        "red_dot_enabled": _red_dot_enabled,
+        "homography_loaded": _homography is not None,
+        "detected_points": len(_detected_points),
+        "calibration_points": len(_calibration_points),
+        "walking": _walking,
+    }
 
 
 # ==================== Video Stream ====================
@@ -925,18 +1011,34 @@ def get_laser_channel_power():
     if _laser is None:
         return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
     resp = _laser.get_channel_power()
-    return {"response": resp}
+    power = _parse_channel_power_response(resp)
+    if power is None:
+        power = {
+            "p808": int(_laser.channel_power[0]),
+            "p980": int(_laser.channel_power[1]),
+            "p1064": int(_laser.channel_power[2]),
+        }
+    return {"response": resp, "power": power}
 
 
 @app.post("/laser/active")
-def set_active_lasers(l1064: int = Query(1), l980: int = Query(1), l808: int = Query(1), l660: int = Query(0)):
+def set_active_lasers(
+    l1064: int = Query(1),
+    l980: int = Query(1),
+    l808: int = Query(1),
+    l660: int | None = Query(None),
+):
     if _laser is None:
         return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
-    resp = _laser.set_active_lasers(l1064, l980, l808, l660)
+    resp = _laser.set_active_lasers(l1064, l980, l808, 0 if l660 is None else l660)
     if l660 is not None:
         global _red_dot_enabled
         _red_dot_enabled = bool(l660)
-    return {"response": resp, "active": [bool(l1064), bool(l980), bool(l808), bool(l660)]}
+    return {
+        "response": resp,
+        "active": [bool(l1064), bool(l980), bool(l808)],
+        "red_dot": _red_dot_enabled,
+    }
 
 
 @app.post("/laser/current")

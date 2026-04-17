@@ -118,6 +118,39 @@
     .danger-btn { background: #8b0000; }
     .danger-btn:hover { background: #a00000; }
     .emph-btn { font-weight: bold; font-size: 14px; }
+    .wavelength-row {
+      display: flex;
+      gap: 8px;
+      align-items: stretch;
+      flex-wrap: wrap;
+      margin-top: 6px;
+    }
+    .wavelength-card {
+      flex: 1 1 120px;
+      min-width: 120px;
+      padding: 6px;
+      border: 1px solid #666;
+      border-radius: 4px;
+      background: #2a2a2a;
+      transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .wavelength-card.active {
+      background: #173617;
+      border-color: #44ff44;
+      box-shadow: inset 0 0 0 1px #44ff44;
+    }
+    .wavelength-card label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      border: 0;
+    }
+    .wavelength-card input[type=number] {
+      width: 100%;
+    }
     
     .success-btn { background: #006600; }
     .success-btn:hover { background: #009900; }
@@ -206,6 +239,11 @@
       border-radius: 4px;
       overflow: hidden;
       background: #333;
+    }
+    #section-log {
+      position: sticky;
+      top: 0;
+      z-index: 20;
     }
 
     .section-header {
@@ -391,12 +429,25 @@
   <div id="container">
     <div id="left">
       <div id="video-container">
-        <img id="cam" src="http://localhost:8000/frame/current" alt="camera stream" />
+        <img id="cam" src="" alt="camera stream" />
         <div id="crosshair"></div>
       </div>
     </div>
     
     <div id="right">
+
+      <!-- Status Log -->
+      <div class="section" id="section-log">
+        <button class="section-header" type="button" onclick="toggleSection('log')">
+          <span class="section-title">📋 LOG</span>
+          <span class="section-chevron">▼</span>
+        </button>
+        <div class="section-body">
+        <div class="panel">
+        <textarea id="logArea" readonly></textarea>
+      </div>
+        </div>
+      </div>
 
       <!-- DETECTION -->
       <div class="section" id="section-detection">
@@ -448,6 +499,10 @@
           <button onclick="refreshGalvoNow()" class="small-btn">Refresh Pos</button>
           <button onclick="startWalking()" class="small-btn success-btn">TEST: GALVO TEST WALK</button>
         </div>
+        <div class="info-line" id="galvoClickInfo">Click on video to choose a galvo target</div>
+        <button id="moveClickedBtn" onclick="moveToClickedPosition()" class="small-btn" style="width:100%;" disabled>
+          Move To Clicked Position
+        </button>
       </div>
         </div>
       </div>
@@ -480,52 +535,49 @@
         
         <!-- Laser Settings -->
         <hr style="border-color:#555;margin:8px 0;" />
-        <div style="margin: 4px 0;">
-          <label class="info-label">Active Lasers (1064,980,808,660):</label>
-        </div>
-        <div class="grid-2">
-          <label><input type="checkbox" id="l1064" checked> 1064nm</label>
-          <label><input type="checkbox" id="l980" checked> 980nm</label>
-        </div>
-        <div class="grid-2">
-          <label><input type="checkbox" id="l808" checked> 808nm</label>
-          <label><input type="checkbox" id="l660"> 660nm</label>
-        </div>
-        <button onclick="setActiveLasers()" class="small-btn" style="width:100%;">Apply</button>
-        
-        <div style="margin-top: 6px;">
-          <label class="info-label">Current (1-100):</label>
+
+        <div style="margin-top: 8px;">
+          <label class="info-label">Red Dot:</label>
           <div class="grid-2">
-            <input id="lasCurr" type="number" min="1" max="100" value="50">
-            <button onclick="setLasCurr()" class="small-btn">Set</button>
+            <button onclick="setRedDotEnabled(true)" class="small-btn">Enable Red DOT</button>
+            <button onclick="setRedDotEnabled(false)" class="small-btn">Disable Red DOT</button>
           </div>
         </div>
         
         <div style="margin-top: 6px;">
-          <label class="info-label">Pulse (1-1000 ms):</label>
+          <label class="info-label">Channel Current / Power (0-100):</label>
+          <div class="info-line">A wavelength is active when its current is not 0.</div>
+          <div class="wavelength-row">
+            <div class="wavelength-card" id="wave1064">
+              <label>
+                <span>1064nm</span>
+                <input id="lasP1064" type="number" min="0" max="100" value="0" oninput="updateWavelengthHighlights()">
+              </label>
+            </div>
+            <div class="wavelength-card" id="wave980">
+              <label>
+                <span>980nm</span>
+                <input id="lasP980" type="number" min="0" max="100" value="0" oninput="updateWavelengthHighlights()">
+              </label>
+            </div>
+            <div class="wavelength-card" id="wave808">
+              <label>
+                <span>808nm</span>
+                <input id="lasP808" type="number" min="0" max="100" value="0" oninput="updateWavelengthHighlights()">
+              </label>
+            </div>
+          </div>
+          <button onclick="setChannelPower()" class="small-btn" style="width:100%; margin-top: 6px;">Apply Currents</button>
+        </div>
+        
+        <div style="margin-top: 6px;">
+          <label class="info-label">Pulse Duration For Enabled Wavelengths (10-1000 ms):</label>
           <div class="grid-2">
-            <input id="lasPulse" type="number" min="1" max="1000" value="100">
+            <input id="lasPulse" type="number" min="10" max="1000" value="100">
             <button onclick="setLasPulse()" class="small-btn">Set</button>
           </div>
+          <button onclick="fireSingleShot()" class="small-btn danger-btn emph-btn" style="width:100%; margin-top: 6px;">FIRE</button>
         </div>
-        
-        <div style="margin-top: 6px;">
-          <label class="info-label">Direct Fire (10-1000 ms):</label>
-          <div class="grid-2">
-            <input id="laserFireMs" type="number" min="10" max="1000" value="100">
-            <button onclick="fireLaserDirect()" class="small-btn danger-btn">FIRE NOW</button>
-          </div>
-        </div>
-        
-        <!-- Fire Manual Target -->
-        <hr style="border-color:#555;margin:8px 0;" />
-        <h3 style="font-size:14px;margin:4px 0;color:#0f0;">Fire Manual Target</h3>
-        <div class="info-line" id="targetInfo">Click on video to choose target</div>
-        <div class="grid-2">
-          <button id="fireTargetBtn" onclick="fireTarget()" class="small-btn danger-btn" disabled>FIRE</button>
-          <label><input type="checkbox" id="fireTestMode"> Test</label>
-        </div>
-        <div class="info-line" id="galvoTargetInfo"></div>
       </div>
         </div>
       </div>
@@ -699,24 +751,12 @@
         </div>
       </div>
 
-      <!-- Status Log -->
-      <div class="section" id="section-log">
-        <button class="section-header" type="button" onclick="toggleSection('log')">
-          <span class="section-title">📋 LOG</span>
-          <span class="section-chevron">▼</span>
-        </button>
-        <div class="section-body">
-        <div class="panel">
-        <textarea id="logArea" readonly></textarea>
-      </div>
-        </div>
-      </div>
-
     </div>
   </div>
 
   <script>
     const API = 'http://localhost:8000';
+    document.getElementById('cam').src = `${API}/frame/current?t=${Date.now()}`;
     const cam = document.getElementById('cam');
     let detectionOn = false;
     let walking = false;
@@ -1079,10 +1119,33 @@
         document.getElementById('laserActiveState').textContent = activeText || '-';
         document.getElementById('laserStateValue').textContent = stateText || '-';
 
-        const redDotEnabled = redDotText.includes('1');
-        document.getElementById('l660').checked = redDotEnabled;
       } catch (err) {
         if (logFailures) updateLog(`Laser status refresh failed: ${err.message || err}`);
+      }
+    }
+
+    async function syncChannelPowerInputs(logFailures = false) {
+      try {
+        const data = await fetchJson('/laser/channel_pwr');
+        if (data.power) {
+          document.getElementById('lasP808').value = data.power.p808 ?? 0;
+          document.getElementById('lasP980').value = data.power.p980 ?? 0;
+          document.getElementById('lasP1064').value = data.power.p1064 ?? 0;
+          updateWavelengthHighlights();
+          return;
+        }
+
+        const text = responseText(data.response);
+        const payload = text.includes('->') ? text.split('->').pop() : text;
+        const values = payload.replace(/[\[\]\s]/g, '').split(',').filter(Boolean);
+        if (values.length >= 3) {
+          document.getElementById('lasP808').value = values[0];
+          document.getElementById('lasP980').value = values[1];
+          document.getElementById('lasP1064').value = values[2];
+          updateWavelengthHighlights();
+        }
+      } catch (err) {
+        if (logFailures) updateLog(`Laser power refresh failed: ${err.message || err}`);
       }
     }
 
@@ -1296,28 +1359,41 @@
     }
     
     // ==================== Laser Settings ====================
-    async function setActiveLasers() {
-      const l1064 = document.getElementById('l1064').checked ? 1 : 0;
-      const l980 = document.getElementById('l980').checked ? 1 : 0;
-      const l808 = document.getElementById('l808').checked ? 1 : 0;
-      const l660 = document.getElementById('l660').checked ? 1 : 0;
-      
-      updateLog(`Setting active lasers: ${l1064},${l980},${l808},${l660}`);
+    function updateWavelengthHighlights() {
+      const channels = [
+        ['wave1064', 'lasP1064'],
+        ['wave980', 'lasP980'],
+        ['wave808', 'lasP808'],
+      ];
+
+      channels.forEach(([cardId, inputId]) => {
+        const card = document.getElementById(cardId);
+        const value = parseInt(document.getElementById(inputId).value || '0', 10);
+        card.classList.toggle('active', value > 0);
+      });
+    }
+
+    async function setRedDotEnabled(enabled) {
+      updateLog(`Red dot ${enabled ? 'enabled' : 'disabled'}...`);
       try {
-        const data = await fetchJson(`/laser/active?l1064=${l1064}&l980=${l980}&l808=${l808}&l660=${l660}`, {method: 'POST'});
-        updateLog(`Response: ${responseText(data.response)}`);
+        const data = await fetchJson(`/laser/red_dot_en?enabled=${enabled}`, {method: 'POST'});
+        updateLog(`Red dot response: ${responseText(data.response)}`);
         await refreshLaserStatus();
       } catch (err) {
-        updateLog(`Failed: ${err}`);
+        updateLog(`Red dot update failed: ${err}`);
       }
     }
     
-    async function setLasCurr() {
-      const curr = parseInt(document.getElementById('lasCurr').value);
-      updateLog(`Setting laser current: ${curr}%`);
+    async function setChannelPower() {
+      const p1064 = parseInt(document.getElementById('lasP1064').value);
+      const p980 = parseInt(document.getElementById('lasP980').value);
+      const p808 = parseInt(document.getElementById('lasP808').value);
+      updateLog(`Setting channel powers 1064=${p1064}% 980=${p980}% 808=${p808}%`);
       try {
-        const data = await fetchJson(`/laser/current?curr=${curr}`, {method: 'POST'});
+        const data = await fetchJson(`/laser/channel_pwr?p808=${p808}&p980=${p980}&p1064=${p1064}`, {method: 'POST'});
         updateLog(`Response: ${responseText(data.response)}`);
+        await syncChannelPowerInputs();
+        await refreshLaserStatus();
       } catch (err) {
         updateLog(`Failed: ${err}`);
       }
@@ -1334,22 +1410,21 @@
       }
     }
 
-    async function fireLaserDirect() {
-      const duration = parseInt(document.getElementById('laserFireMs').value);
-      updateLog(`Direct laser fire for ${duration}ms`);
+    async function fireSingleShot() {
+      const pulse = parseInt(document.getElementById('lasPulse').value);
+      updateLog(`Single FIRE at current position with pulse ${pulse}ms`);
       try {
-        const data = await fetchJson(`/laser/fire?duration_ms=${duration}`, {method: 'POST'});
-        updateLog(`Response: ${responseText(data.response)}`);
+        const data = await fetchJson(`/laser/fire?duration_ms=${pulse}`, {method: 'POST'});
+        updateLog(`Fire response: ${responseText(data.response)}`);
         await refreshLaserStatus();
       } catch (err) {
-        updateLog(`Direct fire failed: ${err}`);
+        updateLog(`Single fire failed: ${err}`);
       }
     }
     
     // ==================== Sequence ====================
 
     // ==================== Target click/conversion ====================
-    let targetImagePt = null;
     let targetGalvoPt = null;
 
     function onVideoClick(evt) {
@@ -1357,7 +1432,6 @@
       const rect = img.getBoundingClientRect();
       const ix = Math.round((evt.clientX - rect.left) * (img.naturalWidth / rect.width));
       const iy = Math.round((evt.clientY - rect.top) * (img.naturalHeight / rect.height));
-      targetImagePt = [ix, iy];
 
       // move crosshair
       const ch = document.getElementById('crosshair');
@@ -1365,44 +1439,31 @@
       ch.style.top = (evt.clientY - rect.top) + 'px';
       ch.style.display = 'block';
 
-      document.getElementById('targetInfo').textContent = `Image point (${ix},${iy})`;
-      document.getElementById('galvoTargetInfo').textContent = '';
-      document.getElementById('fireTargetBtn').disabled = true;
-
       // Store image coordinates for move_image
       targetGalvoPt = [ix, iy];
-      document.getElementById('galvoTargetInfo').textContent = `Image coords (${ix},${iy})`;
-      document.getElementById('fireTargetBtn').disabled = false;
+      document.getElementById('galvoClickInfo').textContent = `Selected image point (${ix},${iy})`;
+      document.getElementById('moveClickedBtn').disabled = false;
     }
 
-    async function fireTarget() {
-      if (!targetGalvoPt) return;
-      const test = document.getElementById('fireTestMode').checked;
-      if (!isLaserArmed) {
-        updateLog(`Laser not armed, moving to image coords ${targetGalvoPt[0]},${targetGalvoPt[1]} only`);
-        try {
-          await fetchJson(`/mover/move_image?x=${targetGalvoPt[0]}&y=${targetGalvoPt[1]}`, {method: 'POST'});
-          updateLog('Galvo moved');
-        } catch (err) {
-          updateLog(`Move failed: ${err}`);
-        }
+    async function moveToClickedPosition() {
+      if (!targetGalvoPt) {
+        updateLog('No clicked target selected');
         return;
       }
-      updateLog(`Firing single target at image coords ${targetGalvoPt[0]},${targetGalvoPt[1]} (${test ? 'TEST' : 'LIVE'})`);
+
+      updateLog(`Moving galvo to clicked image coords ${targetGalvoPt[0]},${targetGalvoPt[1]}`);
       try {
         const data = await fetchJson(`/mover/move_image?x=${targetGalvoPt[0]}&y=${targetGalvoPt[1]}`, {method: 'POST'});
         if (data.error) {
-          updateLog(`Move error: ${data.error}`);
+          updateLog(`Move failed: ${data.error}`);
           return;
         }
-        const [tx, ty] = Array.isArray(data.target) ? data.target : [data.x, data.y];
-        await fetchJson('/seq/length?length=1', {method: 'POST'});
-        await fetchJson(`/seq/target?idx=0&x=${tx}&y=${ty}`, {method: 'POST'});
-        const url = test ? `${API}/seq/start_test` : `${API}/seq/start`;
-        const fireData = await fetchJson(url.replace(API, ''), {method: 'POST'});
-        updateLog(`Response: ${responseText(fireData.response)}`);
+
+        const targetText = Array.isArray(data.target) ? `target (${data.target[0]},${data.target[1]})` : 'target moved';
+        updateLog(`Galvo moved to clicked position, ${targetText}`);
+        await updateGalvoDisplay();
       } catch (err) {
-        updateLog(`Fire target failed: ${err}`);
+        updateLog(`Move failed: ${err}`);
       }
     }
 
@@ -1525,6 +1586,8 @@
       
       // Connect SSE for live detection count
       connectDetectionSSE();
+      updateWavelengthHighlights();
+      await syncChannelPowerInputs(true);
       await pollAppErrorEvents(true);
       await pollSequenceEvents(true);
       await pollTestEvents(true);

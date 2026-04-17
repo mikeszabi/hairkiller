@@ -6,7 +6,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 sys.path.append(str(Path(__file__).parent.parent / "code"))
 
 from fastapi import FastAPI, Query
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import time
 import cv2
@@ -61,6 +61,19 @@ except Exception as e:
     _homography = None
 
 
+def _response_has_enabled(lines) -> bool | None:
+    """Best-effort boolean parser for ``...->1`` / ``...->0`` style replies."""
+    if not isinstance(lines, list):
+        return None
+    for line in lines:
+        text = str(line).strip()
+        if text.endswith("->1") or text.endswith("[1]") or text.endswith(" 1"):
+            return True
+        if text.endswith("->0") or text.endswith("[0]") or text.endswith(" 0"):
+            return False
+    return None
+
+
 def _generate_camera():
     """Stream frames from the camera as multipart JPEG.
     
@@ -96,6 +109,11 @@ def _generate_camera():
         #time.sleep(0.03)
 
 
+@app.get("/")
+def root():
+    return FileResponse(Path(__file__).with_name("hk_calibration_app.html"))
+
+
 @app.post("/homography/reload")
 def reload_homography():
     """Reload the homography matrix from the transformation file."""
@@ -105,6 +123,50 @@ def reload_homography():
         return {"status": "reloaded"}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.get("/health")
+def health():
+    frame, idx, captured_ts = _uvc.read_with_meta()
+    ok = frame is not None
+    return {
+        "ok": ok,
+        "camera_ready": ok,
+        "laser_ready": _laser is not None,
+        "galvo_ready": _galvo is not None,
+        "homography_loaded": _homography is not None,
+        "last_frame_index": idx,
+        "frame_age_ms": None if captured_ts is None else (time.perf_counter() - captured_ts) * 1000.0,
+    }
+
+
+@app.get("/frame/meta")
+def frame_meta():
+    frame, idx, captured_ts = _uvc.read_with_meta()
+    if frame is None:
+        return JSONResponse(status_code=503, content={"ok": False, "error": "No frame available"})
+
+    height, width = frame.shape[:2]
+    return {
+        "ok": True,
+        "frame_index": idx,
+        "width": width,
+        "height": height,
+        "frame_age_ms": None if captured_ts is None else (time.perf_counter() - captured_ts) * 1000.0,
+    }
+
+
+@app.get("/stats")
+def stats():
+    return {
+        "ok": True,
+        "camera": _uvc.get_stats(),
+        "settings": _uvc.get_settings(),
+        "detection_enabled": _detection_enabled,
+        "red_dot_enabled": _red_dot_enabled,
+        "homography_loaded": _homography is not None,
+        "calibration_points": len(_calibration_points),
+    }
 
 
 @app.get("/frame/current")
@@ -124,6 +186,31 @@ def read_dot():
     return {"x": int(center[0]), "y": int(center[1])}
 
 
+@app.get("/sse/dot")
+def sse_dot():
+    """Server-Sent Events endpoint for real-time red dot position updates."""
+
+    def event_stream():
+        last_x, last_y = None, None
+        while True:
+            frame, _ = _uvc.read()
+            if frame is not None:
+                _, center = detect_red_dot(frame)
+                if center is not None:
+                    x, y = int(center[0]), int(center[1])
+                    if x != last_x or y != last_y:
+                        last_x, last_y = x, y
+                        data = json.dumps({"x": x, "y": y})
+                        yield f"data: {data}\n\n"
+                elif last_x is not None or last_y is not None:
+                    last_x, last_y = None, None
+                    data = json.dumps({"x": None, "y": None})
+                    yield f"data: {data}\n\n"
+            time.sleep(0.5)
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
 @app.get("/mover/pos")
 def get_mover_pos():
     if _galvo is None:
@@ -131,6 +218,24 @@ def get_mover_pos():
     x, y = _galvo.get_position()
     print(f"[GALVO POS] Reported: X={x}, Y={y}", flush=True)
     return {"x": x, "y": y}
+
+
+@app.get("/sse/galvo_pos")
+def sse_galvo_pos():
+    """Server-Sent Events endpoint for real-time galvo position updates."""
+
+    def event_stream():
+        last_x, last_y = None, None
+        while True:
+            if _galvo is not None:
+                x, y = _galvo.get_position()
+                if x != last_x or y != last_y:
+                    last_x, last_y = x, y
+                    data = json.dumps({"x": x, "y": y})
+                    yield f"data: {data}\n\n"
+            time.sleep(0.2)
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @app.post("/laser/red_dot")
@@ -141,6 +246,62 @@ def set_red_dot(enabled: bool = Query(...)):
     resp = _laser.set_red_dot(enabled)
     _red_dot_enabled = enabled
     return {"response": resp, "enabled": enabled}
+
+
+@app.post("/laser/arm_en")
+def set_laser_arm_enabled(enabled: bool = Query(...)):
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser interface unavailable"})
+    resp = _laser.set_arm_enabled(enabled)
+    armed = _response_has_enabled(resp)
+    return {"response": resp, "enabled": enabled, "armed": armed}
+
+
+@app.get("/laser/arm_en")
+def get_laser_arm_enabled():
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser interface unavailable"})
+    resp = _laser.get_arm_enabled()
+    armed = _response_has_enabled(resp)
+    return {"response": resp, "armed": armed}
+
+
+@app.post("/laser/arm")
+def arm_laser():
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser interface unavailable"})
+    resp = _laser.arm_laser()
+    return {"response": resp}
+
+
+@app.post("/laser/disarm")
+def disarm_laser():
+    global _red_dot_enabled
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser interface unavailable"})
+    resp = _laser.disarm_laser()
+    red_dot_resp = _laser.get_red_dot_enabled()
+    parsed = _response_has_enabled(red_dot_resp)
+    if parsed is not None:
+        _red_dot_enabled = parsed
+    return {"response": resp, "red_dot": _red_dot_enabled}
+
+
+@app.post("/laser/red_dot_en")
+def set_laser_red_dot_enabled(enabled: bool = Query(...)):
+    return set_red_dot(enabled)
+
+
+@app.get("/laser/red_dot_en")
+def get_laser_red_dot_enabled():
+    global _red_dot_enabled
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser interface unavailable"})
+    resp = _laser.get_red_dot_enabled()
+    parsed = _response_has_enabled(resp)
+    if parsed is not None:
+        _red_dot_enabled = parsed
+    return {"response": resp, "enabled": _red_dot_enabled}
 
 
 @app.post("/mover/move")
@@ -176,13 +337,13 @@ def move_direction(direction: str = Query(...), step: int = Query(25)):
     x, y = _galvo.get_position()
     print(f"[GALVO DIR] Current: X={x}, Y={y}, Direction={direction}, Step={step}", flush=True)
     if direction == "up":
-        y -= step
-    elif direction == "down":
         y += step
+    elif direction == "down":
+        y -= step
     elif direction == "left":
-        x -= step
-    elif direction == "right":
         x += step
+    elif direction == "right":
+        x -= step
     print(f"[GALVO DIR] Target: X={x}, Y={y}", flush=True)
     newpos = _galvo.move_2_pos(x, y)
     print(f"[GALVO DIR] Actual after move: X={newpos[0]}, Y={newpos[1]}", flush=True)
@@ -202,6 +363,12 @@ def toggle_detection(enabled: bool = Query(...)):
             print(f"[LASER] Red dot toggle failed: {e}", flush=True)
     print(f"[DETECTION] Toggled to: {_detection_enabled}", flush=True)
     return {"detection_enabled": _detection_enabled, "red_dot": _red_dot_enabled}
+
+
+@app.post("/calibration/detection/toggle")
+def toggle_calibration_detection(enabled: bool = Query(...)):
+    """Compatibility route used by the calibration UI."""
+    return toggle_detection(enabled)
 
 
 @app.get("/detection/status")

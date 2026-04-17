@@ -1,70 +1,105 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+"""Small galvo motion tester using the shared serial helpers.
+
+Examples:
+    python testcode/galvo_tester.py 1750 1600
+    python testcode/galvo_tester.py 1750 1600 --readback
+    python testcode/galvo_tester.py --list-ports
 """
-Created on Mon Feb 20 11:01:16 2023
 
-@author: itqs
-"""
-# sudo dmesg | grep tty
-# ls -l /dev/serial/by-id/
-# laser : usb-FTDI_Chipi-X_FT0DI7VI-if00-port0 
-# galvo : usb-FTDI_USB__-__Serial-if00-port0
+from __future__ import annotations
 
-# sudo chown $USER ttyUSB0
-# sudo chown $USER ttyUSB1
+import sys
+from pathlib import Path
 
-import serial
 
-# Constants
-STX = 2
-ETX = 3
+sys.path.append(str(Path(__file__).resolve().parent.parent / "code"))
 
-# Initialize serial port
-ser = serial.Serial('/dev/serial/by-id/usb-FTDI_USB__-__Serial-if00-port0', baudrate=115200, timeout=1)
+from serial_commands import build_command  # type: ignore  # added to path at runtime
+from serial_devices_handler import (  # type: ignore  # added to path at runtime
+    SerialDevice,
+    list_serial_ports,
+    parse_args_base,
+)
 
-#ser = serial.Serial('/dev/ttyUSB0', baudrate=115200, timeout=1)
-ser.close()
-ser.open()
-print(ser.isOpen())
 
-def sendcmd(command, data):
-    """
-    Send a command to the serial port.
-    :param command: The command to send.
-    :param data: The data array (6 elements long).
-    """
-    packet = bytearray(10)  # 8-byte buffer
-    chksum = command
+GALVO_MIN = 0
+GALVO_MAX = 4095
 
-    packet[0] = STX
-    packet[1] = command
 
-    # Add data and calculate checksum
-    for k in range(6):
-        packet[k + 2] = data[k]
-        chksum += data[k]
+def _clamp(value: int) -> int:
+    return max(GALVO_MIN, min(GALVO_MAX, value))
 
-    packet[8] = ETX
-    #buf.append(chksum & 0xFF)  # Ensure checksum is within byte range
-    packet[9] = chksum & 0xFF
 
-    # Send to serial port
-    ser.write(packet)
+def main() -> int:
+    ap = parse_args_base("Move galvo to a target position using shared serial helpers")
+    ap.add_argument("x", type=int, nargs="?", default=1750, help="Target X position (0-4095)")
+    ap.add_argument("y", type=int, nargs="?", default=1600, help="Target Y position (0-4095)")
+    ap.add_argument(
+        "--readback",
+        action="store_true",
+        help="Query TARGET_GET_POS after moving and print the reply",
+    )
+    ap.add_argument(
+        "--feedback",
+        action="store_true",
+        help="Query TARGET_GET_FB_POS after moving and print the reply",
+    )
+    args = ap.parse_args()
 
-# Example data initialization
-Galvo1 = 1750  # Example value, set as needed
-Galvo2 = 1600  # Example value, set as needed
+    if args.list_ports:
+        ports = list_serial_ports()
+        print("\n".join(ports) if ports else "No serial ports found.")
+        return 0
 
-data = [
-    Galvo1 & 0xff,  # Lower 8 bits
-    Galvo1 >> 8,    # Upper 8 bits
-    Galvo2 & 0xff,  # Lower 8 bits
-    Galvo2 >> 8,    # Upper 8 bits
-    0,              # Empty byte
-    0               # Empty byte
-]
+    x = _clamp(args.x)
+    y = _clamp(args.y)
+    if (x, y) != (args.x, args.y):
+        print(f"Clamped requested position ({args.x}, {args.y}) -> ({x}, {y})")
 
-# Send command
-sendcmd(5, data)
+    dev = SerialDevice(
+        port=args.port,
+        baud=args.baud,
+        timeout_s=args.timeout,
+        eol=args.eol.encode("utf-8").decode("unicode_escape"),
+        debug=not args.quiet,
+    )
 
-ser.close()
+    try:
+        dev.open()
+
+        move_cmd = build_command("TARGET_SET_POS", x, y)
+        move_resp = dev.query(move_cmd, expect_prefix=None, extra_read_window_s=0.2)
+        print(f"Moved galvo to ({x}, {y})")
+        if move_resp:
+            print("Move response:")
+            for line in move_resp:
+                print(f"  {line}")
+        else:
+            print("Move response: (no response)")
+
+        if args.readback:
+            pos_resp = dev.query(build_command("TARGET_GET_POS"), expect_prefix=None, extra_read_window_s=0.2)
+            print("Reported target position:")
+            if pos_resp:
+                for line in pos_resp:
+                    print(f"  {line}")
+            else:
+                print("  (no response)")
+
+        if args.feedback:
+            fb_resp = dev.query(build_command("TARGET_GET_FB_POS"), expect_prefix=None, extra_read_window_s=0.2)
+            print("Galvo feedback position:")
+            if fb_resp:
+                for line in fb_resp:
+                    print(f"  {line}")
+            else:
+                print("  (no response)")
+    finally:
+        dev.close()
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
