@@ -15,6 +15,9 @@ def _clamp(val: int, lo: int, hi: int) -> int:
 class TargetInterface:
     """Manage target list and sequence start/stop controls."""
 
+    MODE_MANUAL = 0
+    MODE_AUTO = 1
+
     def __init__(
         self,
         dev: Optional[SerialDevice] = None,
@@ -59,10 +62,13 @@ class TargetInterface:
         return [f"TARGET[{idx}]={x},{y}"]
 
     def start_seq(self):
-        return self._send_targets_and_start()
+        return self._send("TARGET_START")
 
     def start_seq_test(self):
-        return self._send_targets_and_start()
+        return self._send("TARGET_START")
+
+    def start_seq_manual(self):
+        return self._send("TARGET_START")
 
     def stop_seq(self):
         return self._send("TARGET_STOP")
@@ -73,11 +79,25 @@ class TargetInterface:
     def resume_seq(self):
         return self._send("TARGET_CONTINUE")
 
+    def set_mode(self, mode: int):
+        mode = self.MODE_AUTO if int(mode) == self.MODE_AUTO else self.MODE_MANUAL
+        return self._send("TARGET_SET_MODE", mode)
+
+    def get_mode(self):
+        return self._send("TARGET_GET_MODE")
+
     def get_state(self):
         return self._send("TARGET_GET_STATE")
 
     def get_last_error(self):
         return self._send("TARGET_GET_LAST_ERROR")
+
+    def clear_targets(self):
+        self.targets = {}
+        return self._send("TARGET_CLEAR_TARGETS")
+
+    def get_target_count(self) -> int:
+        return len(self.targets)
 
     def close(self):
         try:
@@ -86,7 +106,7 @@ class TargetInterface:
             pass
 
     # ---------- internal ----------
-    def _send_targets_and_start(self):
+    def load_targets(self, mode: Optional[int] = None):
         if not self.targets:
             return ["ERROR: no targets set"]
 
@@ -108,7 +128,15 @@ class TargetInterface:
                 self.pulse_ms,
             )
 
-        self._send("TARGET_SET_MODE", "AUTO")
+        if mode is not None:
+            self.set_mode(mode)
+
+        return [f"TARGET_COUNT={len(self.targets)}"]
+
+    def _send_targets_and_start_with_mode(self, mode: int):
+        load_resp = self.load_targets(mode=mode)
+        if load_resp and any("ERROR:" in str(line) for line in load_resp):
+            return load_resp
         return self._send("TARGET_START")
 
 

@@ -7,6 +7,7 @@ serial_commands.py.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import re
 from typing import List, Optional, Tuple
 
 from serial_devices_handler import (
@@ -14,11 +15,122 @@ from serial_devices_handler import (
     DEFAULT_PORT,
     SerialDevice,
 )
-from serial_commands import build_command, sensor_values_to_dict
+from serial_commands import SENSOR_FIELDS, build_command, sensor_values_to_dict
 
 
 def _clamp(value: int, lo: int, hi: int) -> int:
     return max(lo, min(hi, value))
+
+
+def _extract_sensor_payload(lines: list[str]) -> list[float] | None:
+    """Parse the numeric payload out of a SENSORS_GET_VALUES response.
+
+    The controller may include extra lines or wrappers, so we scan every line
+    and pick the first bracketed numeric list that contains the expected number
+    of sensor values.
+    """
+    expected_len = len(SENSOR_FIELDS)
+
+    for line in lines:
+        text = str(line).strip()
+        if "SENSORS_GET_VALUES" not in text:
+            continue
+        if "END" in text or "Count" in text:
+            continue
+        if "->" not in text:
+            continue
+
+        payload = text.split("->", 1)[1].strip()
+        start = payload.find("[")
+        end = payload.rfind("]")
+        if start != -1 and end != -1 and end > start:
+            payload = payload[start + 1:end]
+
+        try:
+            values = [float(v.strip()) for v in payload.split(",") if v.strip()]
+        except ValueError:
+            continue
+
+        if len(values) >= expected_len:
+            return values[:expected_len]
+
+    # Fallback: collect numeric tokens from all sensor-related lines in case the
+    # firmware splits the payload across multiple lines or adds extra text.
+    combined_tokens: list[float] = []
+    for line in lines:
+        text = str(line).strip()
+        if "SENSORS_GET_VALUES" not in text:
+            continue
+        if "END" in text or "Count" in text:
+            continue
+
+        if "->" in text:
+            text = text.split("->", 1)[1]
+
+        for token in re.findall(r"[-+]?\d+(?:\.\d+)?", text):
+            try:
+                combined_tokens.append(float(token))
+            except ValueError:
+                continue
+
+    if len(combined_tokens) >= expected_len:
+        return combined_tokens[:expected_len]
+
+    return None
+
+
+def _extract_legacy_sensor_values(lines: list[str]) -> dict[str, float] | None:
+    """Parse legacy sensor text like:
+
+    ADC: ADCts:2849309, Iin:690mA, ... Gy:2285 I2C:Pts:2849303, ...
+    """
+    text = " ".join(str(line).strip() for line in lines if line).strip()
+    if "ADC:" not in text:
+        return None
+
+    patterns = {
+        "inputCurrent_mA": r"\bIin:(-?\d+(?:\.\d+)?)mA\b",
+        "laser660Curr_mA": r"\bI660:(-?\d+(?:\.\d+)?)mA\b",
+        "laser808Curr_mA": r"\bI808:(-?\d+(?:\.\d+)?)mA\b",
+        "laser980Curr_mA": r"\bI980:(-?\d+(?:\.\d+)?)mA\b",
+        "laser1064Curr_mA": r"\bI1064:(-?\d+(?:\.\d+)?)mA\b",
+        "laserPower_mV": r"\bPwr:(-?\d+(?:\.\d+)?)mV\b",
+        "laserTemp_C": r"\bTlaser:(-?\d+(?:\.\d+)?)dC\b",
+        "peltierVoltage_mV": r"\bVpelt:(-?\d+(?:\.\d+)?)mV\b",
+        "heatsinkTemp_C": r"\bTheat:(-?\d+(?:\.\d+)?)dC\b",
+        "mosfetTemp_C": r"\bTmos:(-?\d+(?:\.\d+)?)dC\b",
+        "target1Temp_C": r"\bT1:(-?\d+(?:\.\d+)?)dC\b",
+        "target2Temp_C": r"\bT2:(-?\d+(?:\.\d+)?)dC\b",
+        "galvoPosX_raw": r"\bGx:(-?\d+(?:\.\d+)?)\b",
+        "galvoPosY_raw": r"\bGy:(-?\d+(?:\.\d+)?)\b",
+        "updateTimestamp_ms": r"\bADCts:(-?\d+(?:\.\d+)?)\b",
+    }
+
+    values: dict[str, float] = {}
+    for key, pattern in patterns.items():
+        match = re.search(pattern, text)
+        if not match:
+            continue
+        raw_value = float(match.group(1))
+        if key.endswith("_C"):
+            raw_value /= 10.0
+        values[key] = raw_value
+
+    if not values:
+        return None
+
+    # The legacy format does not expose separate offset values, so mirror the
+    # corresponding measured currents to keep the UI populated consistently.
+    if "laser660Curr_mA" in values:
+        values["laser660_offset_ma"] = values["laser660Curr_mA"]
+    if "laser808Curr_mA" in values:
+        values["laser808_offset_ma"] = values["laser808Curr_mA"]
+    if "laser980Curr_mA" in values:
+        values["laser980_offset_ma"] = values["laser980Curr_mA"]
+    if "laser1064Curr_mA" in values:
+        values["laser1064_offset_ma"] = values["laser1064Curr_mA"]
+
+    return values
 
 
 @dataclass
@@ -33,6 +145,7 @@ class LaserInterface:
     # Internal state for power channels
     channel_power: List[int] = field(default_factory=lambda: [0, 0, 0])  # order: 808, 980, 1064
     active: List[bool] = field(default_factory=lambda: [True, True, True])  # order: 808, 980, 1064
+    pending_channel_power: Optional[Tuple[int, int, int]] = None
 
     def __post_init__(self) -> None:
         kwargs = {}
@@ -109,16 +222,39 @@ class LaserInterface:
         return self._send_cmd("LASER_GET_RED_DOT_EN")
 
     def set_channel_power(self, p808: int, p980: int, p1064: int):
-        """Set raw power triplet directly."""
-        self.channel_power = [
+        """Set per-channel power from the UI.
+
+        This sends the exact firmware command triplet as entered so the UI path
+        matches a manual raw serial command as closely as possible.
+        """
+        requested = [
             _clamp(int(p808), 0, 100),
             _clamp(int(p980), 0, 100),
             _clamp(int(p1064), 0, 100),
         ]
-        return self._send_cmd("LASER_SET_CHANNEL_PWR", *self.channel_power)
+        resp = self._send_cmd("LASER_SET_CHANNEL_PWR", *requested)
+
+        if self._response_is_ok(resp):
+            self.channel_power = requested
+            self.active = [value > 0 for value in requested]
+            self.pending_channel_power = None
+            return resp
+
+        if self._response_blocked_by_runtime_state(resp):
+            # Keep the UI and queued target sequences aligned with the latest
+            # operator intent, then retry the controller write later.
+            self.channel_power = requested
+            self.active = [value > 0 for value in requested]
+            self.pending_channel_power = tuple(requested)
+            return resp + [
+                "INFO: channel powers staged locally and will sync when app is RUNNING and no process is active"
+            ]
+
+        return resp
 
     def get_channel_power(self):
         """Get raw power triplet directly."""
+        self.sync_pending_channel_power()
         return self._send_cmd("LASER_GET_CHANNEL_PWR")
 
     def fire(self, duration_ms: int):
@@ -216,11 +352,13 @@ class LaserInterface:
         if not resp:
             return resp
         try:
-            # Expect first line payload after arrow; split on '->'
-            line = resp[0]
-            payload = line.split("->", 1)[-1].strip("[]")
-            values = [float(v) for v in payload.split(",") if v]
-            mapping = sensor_values_to_dict(values)
+            values = _extract_sensor_payload(resp)
+            if values is not None:
+                mapping = sensor_values_to_dict(values)
+            else:
+                mapping = _extract_legacy_sensor_values(resp)
+            if mapping is None:
+                return resp
             return [mapping.get("laserTemp_C", "N/A")]
         except Exception:
             return resp
@@ -231,13 +369,15 @@ class LaserInterface:
         if not resp:
             return {"raw": resp, "values": None}
         try:
-            values_line = next(
-                line for line in resp
-                if "->" in line and "END" not in line and "Count" not in line
-            )
-            payload = values_line.split("->", 1)[-1].strip().strip("[]")
-            values = [float(v) for v in payload.split(",") if v]
-            return {"raw": resp, "values": sensor_values_to_dict(values)}
+            values = _extract_sensor_payload(resp)
+            if values is not None:
+                return {"raw": resp, "values": sensor_values_to_dict(values)}
+
+            legacy_values = _extract_legacy_sensor_values(resp)
+            if legacy_values is not None:
+                return {"raw": resp, "values": legacy_values}
+
+            return {"raw": resp, "values": None}
         except Exception:
             return {"raw": resp, "values": None}
 
@@ -252,6 +392,9 @@ class LaserInterface:
             self.channel_power[2] if self.active[2] else 0,
         )
 
+    def has_pending_channel_power(self) -> bool:
+        return self.pending_channel_power is not None
+
     # --------------- internal helpers ------------------
     def _apply_channel_power(self):
         """Apply current channel power/state to the device."""
@@ -261,6 +404,33 @@ class LaserInterface:
             self.channel_power[2] if self.active[2] else 0,  # 1064
         ]
         return self._send_cmd("LASER_SET_CHANNEL_PWR", *vals)
+
+    def sync_pending_channel_power(self):
+        """Retry a deferred channel-power write once the controller is ready."""
+        if self.pending_channel_power is None:
+            return None
+
+        requested = self.pending_channel_power
+        resp = self._send_cmd("LASER_SET_CHANNEL_PWR", *requested)
+        if self._response_is_ok(resp):
+            self.pending_channel_power = None
+        elif not self._response_blocked_by_runtime_state(resp):
+            # Keep the staged values available for the UI, but stop retrying
+            # automatically on unrelated controller errors.
+            self.pending_channel_power = None
+        return resp
+
+    def _response_is_ok(self, resp) -> bool:
+        joined = " ".join(str(line) for line in resp)
+        return "NOK" not in joined and "OK" in joined
+
+    def _response_blocked_by_runtime_state(self, resp) -> bool:
+        joined = " ".join(str(line).lower() for line in resp)
+        return (
+            "process is active" in joined
+            or "not in running state" in joined
+            or "app is not in running state" in joined
+        )
 
     # --------------- end class ------------------
 

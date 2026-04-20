@@ -517,21 +517,10 @@
         <div class="panel">
         
         <!-- Safety -->
-        <div style="margin: 4px 0;">
-          <span class="info-label">Safety:</span>
-          <span id="laserStatus" class="laser-status">DISARMED</span>
-        </div>
-        <div class="status-grid">
-          <div class="info-line"><span class="info-label">Arm:</span> <span id="laserArmState" class="mono">-</span></div>
-          <div class="info-line"><span class="info-label">Red Dot:</span> <span id="laserRedDotState" class="mono">-</span></div>
-          <div class="info-line"><span class="info-label">Active:</span> <span id="laserActiveState" class="mono">-</span></div>
-          <div class="info-line"><span class="info-label">State:</span> <span id="laserStateValue" class="mono">-</span></div>
-        </div>
         <div class="grid-2">
           <button onclick="armLaser()" class="small-btn success-btn">ARM</button>
           <button onclick="disarmLaser()" class="small-btn danger-btn">DISARM</button>
         </div>
-        <button onclick="refreshLaserStatus(true)" class="small-btn" style="width:100%;">Refresh Laser Status</button>
         
         <!-- Laser Settings -->
         <hr style="border-color:#555;margin:8px 0;" />
@@ -590,45 +579,28 @@
         </button>
         <div class="section-body">
         <div class="panel">
-        <div class="status-grid">
-          <div class="info-line"><span class="info-label">State:</span> <span id="seqStateValue" class="mono">-</span></div>
-          <div class="info-line"><span class="info-label">Last Finish:</span> <span id="seqLastFinish" class="mono">-</span></div>
-        </div>
         <div class="info-line">
-          <span class="info-label">Last Seq Error:</span> <span id="seqLastError" class="mono">-</span>
-        </div>
-        <button onclick="refreshSequenceStatus(true)" class="small-btn" style="width:100%;">Refresh Sequence Status</button>
-        
-        <!-- Use captured points -->
-        <div class="info-line" style="font-size:11px;color:#aaa;">
-          Use captured points for sequenced firing.
+          <span class="info-label">Target Points:</span> <span id="seqTargetCount" class="mono">0</span>
         </div>
         <div class="grid-2">
-          <button onclick="fireWalkTest()" class="small-btn warning-btn">Walk TEST</button>
-          <button onclick="fireWalkLive()" class="small-btn success-btn">Walk LIVE</button>
+          <button onclick="updateTargetPoints()" class="small-btn">Update Target Points</button>
+          <button onclick="clearTargetPoints()" class="small-btn">Remove Target Points</button>
         </div>
-        
-        <!-- START/STOP/HALT -->
-        <!-- <hr style="border-color:#555;margin:8px 0;" />
-        <div style="margin: 4px 0;">
-          <label class="info-label">Seq Length (1-256):</label>
-          <div class="grid-2">
-            <input id="seqLen" type="number" min="1" max="256" value="1" readonly>
-            <button onclick="setSeqLength()" class="small-btn">Set</button>
-          </div>
-        </div> -->
-        
-        <!-- <div class="grid-3">
-          <button onclick="startSeqTest()" class="small-btn warning-btn">START TEST</button>
-          <button onclick="startSeq()" class="small-btn success-btn">START LIVE</button>
-          <button onclick="stopSeq()" class="small-btn danger-btn emph-btn">STOP</button>
-        </div> -->
-        
+        <div class="grid-2">
+          <button onclick="setTargetMode('manual')" class="small-btn">Set Manual Mode</button>
+          <button onclick="setTargetMode('auto')" class="small-btn">Set Auto Mode</button>
+        </div>
         <div class="grid-3">
-          <button onclick="stopSeq()" class="small-btn danger-btn emph-btn">STOP</button>
+          <button onclick="getTargetStatus()" class="small-btn">Target Status</button>
+          <button onclick="stepTarget()" class="small-btn warning-btn emph-btn">STEP</button>
+          <button onclick="shootAll()" class="small-btn success-btn emph-btn">SHOOT ALL</button>
+        </div>
+        <div class="grid-2">
           <button onclick="haltSeq()" class="small-btn warning-btn emph-btn">HALT</button>
-          <button onclick="resumeSeq()" class="small-btn success-btn emph-btn">RESUME</button>
-          <span></span>
+          <button onclick="stopSeq()" class="small-btn danger-btn emph-btn">STOP</button>
+        </div>
+        <div class="info-line" style="font-size:11px;color:#aaa;">
+          `Update Target Points` loads the captured detections into the controller. `SHOOT ALL` then starts the already loaded list.
         </div>
       </div>
         </div>
@@ -640,39 +612,19 @@
           <span class="section-title">🧪 TEST</span>
           <span class="section-chevron">▼</span>
         </button>
-        <div class="section-body">
+      <div class="section-body">
         <div class="panel test-panel">
-        <div class="status-grid">
-          <div class="info-line"><span class="info-label">App State:</span> <span id="testAppState" class="mono">-</span></div>
-          <div class="info-line"><span class="info-label">Proc Time:</span> <span id="testProcTime" class="mono">-</span></div>
-          <div class="info-line"><span class="info-label">FW:</span> <span id="testFwVersion" class="mono">-</span></div>
-          <div class="info-line"><span class="info-label">HW:</span> <span id="testHwVersion" class="mono">-</span></div>
-          <div class="info-line"><span class="info-label">Laser Test:</span> <span id="testLaserResult" class="mono">-</span></div>
-          <div class="info-line"><span class="info-label">Last App Error:</span> <span id="testLastError" class="mono">-</span></div>
-        </div>
-        <button onclick="refreshTestPanel(true)" class="small-btn" style="width:100%;">Refresh Test Status</button>
         <div style="margin-top: 6px;">
           <label class="info-label">Raw Serial Command:</label>
-          <div class="grid-2">
-            <input id="rawSerialCommand" type="text" placeholder="APP_PING or TARGET_GET_STATE">
+          <div class="grid-3">
+            <input id="rawSerialCommand" type="text" list="rawSerialCommandList" placeholder="APP_PING or TARGET_GET_STATE" oninput="updateRawCommandHint()">
+            <button onclick="showRawCommandInfo()" class="small-btn">Info</button>
             <button onclick="runRawSerialCommand()" class="small-btn success-btn">Execute</button>
           </div>
+          <datalist id="rawSerialCommandList"></datalist>
+          <div id="rawSerialCommandHelp" class="info-line" style="font-size:11px;color:#aaa;">Type a command name to see a short description.</div>
         </div>
-        <div class="grid-2">
-          <button onclick="runAppCommand('Ping', '/app/ping', 'POST')" class="small-btn">APP_PING</button>
-          <button onclick="runAppCommand('Commands', '/app/commands')" class="small-btn">APP_GET_COMMANDS</button>
-          <button onclick="runAppCommand('Limits', '/app/limits')" class="small-btn">APP_GET_LIMITS</button>
-          <button onclick="runAppCommand('Reset', '/app/reset', 'POST')" class="small-btn warning-btn">APP_RESET</button>
-          <button onclick="runAppCommand('Proc Time', '/app/proc_time')" class="small-btn">APP_GET_PROC_TIME</button>
-          <button onclick="runAppCommand('Power Test Start', '/app/laser_test/start', 'POST')" class="small-btn success-btn">APP_DO_LASER_PWR_TEST</button>
-          <button onclick="runAppCommand('Power Test Result', '/app/laser_test/result')" class="small-btn">APP_GET_LASER_TEST_RESULT</button>
-          <button onclick="runAppCommand('Power Test Data', '/app/laser_test/data')" class="small-btn">APP_GET_LASER_TEST_DATA</button>
-          <button onclick="runAppCommand('FW Version', '/app/fw_version')" class="small-btn">APP_GET_FW_VERSION</button>
-          <button onclick="runAppCommand('HW Version', '/app/hw_version')" class="small-btn">APP_GET_HW_VERSION</button>
-          <button onclick="runAppCommand('App State', '/app/state')" class="small-btn">APP_GET_STATE</button>
-          <button onclick="runAppCommand('App Last Error', '/app/last_error')" class="small-btn">APP_GET_LAST_ERROR</button>
-          <button onclick="runAppCommand('Clear App Error', '/app/clear_error', 'POST')" class="small-btn warning-btn">APP_CLEAR_ERROR</button>
-        </div>
+        <button onclick="showCommandPicker()" class="small-btn" style="width:100%; margin-top: 6px;">APP_GET_COMMANDS</button>
         <textarea id="testResultArea" class="test-result" readonly></textarea>
         <div class="test-event-list" id="testEventList">
           <span style="color: #999;">No async test events</span>
@@ -687,19 +639,9 @@
           <span class="section-title">🌡️ SENSORS</span>
           <span class="section-chevron">▼</span>
         </button>
-        <div class="section-body">
+      <div class="section-body">
         <div class="panel">
-        <div class="info-line">
-          <span class="info-label">Laser Temp:</span> <span id="laserTemp">-</span>
-        </div>
-        <div class="info-line">
-          <span class="info-label">Red Dot Detected:</span> X=<span id="dotX">-</span> Y=<span id="dotY">-</span>
-        </div>
-        <hr style="border-color:#555;margin:8px 0;" />
-        <div class="grid-2">
-          <button onclick="getCurrentSensorValues()" class="small-btn success-btn">Get Current Values</button>
-          <button onclick="updateSensorDisplay(true)" class="small-btn">Refresh Temp/Dot</button>
-        </div>
+        <button onclick="getCurrentSensorValues()" class="small-btn success-btn" style="width:100%;">Get Current Values</button>
         <div class="info-line"><span class="info-label">Timestamp:</span> <span id="sensorValuesTimestamp">-</span></div>
         <div class="sensor-grid">
           <div class="info-line"><span class="info-label">INPUT_CURR [mA]:</span> <span id="sensor_inputCurrent_mA">-</span></div>
@@ -762,6 +704,7 @@
     let walking = false;
     let isLaserArmed = false;
     let detectionSSE = null;
+    let commandCatalog = new Map();
     let knownErrorEventKeys = new Set();
     let knownSequenceEventKeys = new Set();
     let knownTestEventKeys = new Set();
@@ -880,8 +823,8 @@
     async function refreshAppErrors(logFailures = false) {
       try {
         const data = await fetchJson('/app/errors');
-        const stateText = responseText(data.state?.response) || '-';
-        const lastErrorText = responseText(data.last_error?.response) || '-';
+        const stateText = responseText(data.state) || '-';
+        const lastErrorText = responseText(data.last_error) || '-';
         const events = Array.isArray(data.events) ? data.events : [];
 
         document.getElementById('appStateValue').textContent = stateText;
@@ -920,7 +863,6 @@
         const events = Array.isArray(data.events) ? data.events : [];
         const latestEvent = events.length > 0 ? events[0] : null;
 
-        document.getElementById('seqLastFinish').textContent = latestEvent ? (latestEvent.message || '-') : '-';
         updateSequenceBadge(latestEvent ? latestEvent.status : 'IDLE');
 
         for (const event of events) {
@@ -938,14 +880,11 @@
     async function refreshSequenceStatus(logFailures = false) {
       try {
         const data = await fetchJson('/seq/status');
-        const stateText = responseText(data.state?.response) || '-';
-        const lastErrorText = responseText(data.last_error?.response) || '-';
         const events = Array.isArray(data.events) ? data.events : [];
         const latestEvent = events.length > 0 ? events[0] : null;
+        const targetCount = Number.isFinite(Number(data.target_count)) ? Number(data.target_count) : 0;
 
-        document.getElementById('seqStateValue').textContent = stateText;
-        document.getElementById('seqLastError').textContent = lastErrorText;
-        document.getElementById('seqLastFinish').textContent = latestEvent ? (latestEvent.message || '-') : '-';
+        document.getElementById('seqTargetCount').textContent = String(targetCount);
         updateSequenceBadge(latestEvent ? latestEvent.status : 'IDLE');
 
         for (const event of events) {
@@ -965,6 +904,230 @@
       if (!area) return;
       const rendered = typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2);
       area.value = `${title}\n\n${rendered}`;
+    }
+
+    function normalizeRawCommand(command) {
+      return String(command || '').trim().split(/\s+/, 1)[0] || '';
+    }
+
+    async function loadCommandCatalog() {
+      try {
+        const data = await fetchJson('/app/command_catalog');
+        const commands = Array.isArray(data.commands) ? data.commands : [];
+        commandCatalog = new Map(commands.map((entry) => [entry.name, entry]));
+
+        const datalist = document.getElementById('rawSerialCommandList');
+        if (datalist) {
+          datalist.innerHTML = commands
+            .map((entry) => `<option value="${entry.name}"></option>`)
+            .join('');
+        }
+
+        updateRawCommandHint();
+      } catch (err) {
+        updateLog(`Command catalog load failed: ${err.message || err}`);
+      }
+    }
+
+    function updateRawCommandHint() {
+      const input = document.getElementById('rawSerialCommand');
+      const help = document.getElementById('rawSerialCommandHelp');
+      if (!input || !help) return;
+
+      const normalized = normalizeRawCommand(input.value);
+      if (!normalized) {
+        help.textContent = 'Type a command name to see a short description.';
+        return;
+      }
+
+      const meta = commandCatalog.get(normalized);
+      if (!meta) {
+        help.textContent = `No local description found for ${normalized}.`;
+        return;
+      }
+
+      const parts = [];
+      if (meta.section) parts.push(meta.section);
+      if (meta.description) parts.push(meta.description);
+      if (meta.parameters) parts.push(`Params: ${meta.parameters}`);
+      help.textContent = parts.join(' | ');
+    }
+
+    async function showRawCommandInfo() {
+      const input = document.getElementById('rawSerialCommand');
+      const normalized = normalizeRawCommand(input ? input.value : '');
+      if (!normalized) {
+        alert('Enter a raw serial command first.');
+        return;
+      }
+
+      let meta = commandCatalog.get(normalized);
+      if (!meta) {
+        try {
+          const data = await fetchJson(`/app/command_info?command=${encodeURIComponent(normalized)}`);
+          meta = data.meta;
+        } catch (err) {
+          alert(`No description available for ${normalized}.\n\n${err.message || err}`);
+          return;
+        }
+      }
+
+      const lines = [
+        `${meta.name || normalized}`,
+        meta.section ? `Section: ${meta.section}` : '',
+        meta.parameters ? `Parameters: ${meta.parameters}` : '',
+        meta.description ? `Description: ${meta.description}` : '',
+        meta.returns ? `Returns: ${meta.returns}` : '',
+        meta.returns_nok ? `On error: ${meta.returns_nok}` : '',
+        meta.example ? `Example: ${meta.example}` : '',
+        meta.notes ? `Notes: ${meta.notes}` : '',
+      ].filter(Boolean);
+
+      alert(lines.join('\n\n'));
+    }
+
+    async function showCommandPicker() {
+      try {
+        const data = await fetchJson('/app/commands');
+        setTestResult('APP_GET_COMMANDS', data.response ?? data);
+        openCommandPickerPopup();
+        updateLog(`Opened command picker with ${commandCatalog.size} commands`);
+      } catch (err) {
+        setTestResult('APP_GET_COMMANDS failed', String(err));
+        updateLog(`APP_GET_COMMANDS failed: ${err}`);
+      }
+    }
+
+    function selectCommandFromPopup(command) {
+      const input = document.getElementById('rawSerialCommand');
+      if (!input || !command) return;
+      input.value = command;
+      updateRawCommandHint();
+      input.focus();
+      updateLog(`Selected command: ${command}`);
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function openCommandPickerPopup() {
+      const popup = window.open('', 'hk_command_picker', 'width=720,height=760,resizable=yes,scrollbars=yes');
+      if (!popup) {
+        alert('Popup blocked. Please allow popups for this page.');
+        return;
+      }
+
+      const grouped = {};
+      for (const meta of commandCatalog.values()) {
+        const section = meta.section || 'OTHER';
+        if (!grouped[section]) grouped[section] = [];
+        grouped[section].push(meta);
+      }
+
+      const sectionsHtml = Object.keys(grouped)
+        .sort()
+        .map((section) => {
+          const items = grouped[section]
+            .sort((a, b) => String(a.name).localeCompare(String(b.name)))
+            .map((meta) => {
+              const name = escapeHtml(meta.name);
+              const description = escapeHtml(meta.description || '');
+              const parameters = escapeHtml(meta.parameters || '');
+              return `
+                <button class="cmd" onclick="window.opener.selectCommandFromPopup('${name}')">
+                  <span class="cmd-name">${name}</span>
+                  <span class="cmd-meta">${parameters}</span>
+                  <span class="cmd-desc">${description}</span>
+                </button>
+              `;
+            })
+            .join('');
+          return `<section><h2>${escapeHtml(section)}</h2>${items}</section>`;
+        })
+        .join('');
+
+      popup.document.open();
+      popup.document.write(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Available Commands</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 16px;
+      background: #161616;
+      color: #eaeaea;
+      font-family: sans-serif;
+    }
+    h1 {
+      margin: 0 0 12px 0;
+      color: #8cff8c;
+      font-size: 22px;
+    }
+    h2 {
+      margin: 18px 0 8px 0;
+      color: #8cff8c;
+      font-size: 14px;
+      border-bottom: 1px solid #355235;
+      padding-bottom: 4px;
+    }
+    .note {
+      margin-bottom: 12px;
+      color: #b8b8b8;
+      font-size: 12px;
+    }
+    .cmd {
+      width: 100%;
+      display: block;
+      text-align: left;
+      margin: 6px 0;
+      padding: 10px 12px;
+      background: #232323;
+      color: #eaeaea;
+      border: 1px solid #3f3f3f;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .cmd:hover {
+      background: #2d2d2d;
+      border-color: #69b869;
+    }
+    .cmd-name {
+      display: block;
+      color: #8cff8c;
+      font-weight: bold;
+      font-family: monospace;
+      margin-bottom: 4px;
+    }
+    .cmd-meta {
+      display: block;
+      color: #c9d8c9;
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+    .cmd-desc {
+      display: block;
+      color: #bbbbbb;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+  </style>
+</head>
+<body>
+  <h1>Available Commands</h1>
+  <div class="note">Click any command to paste it into the Raw Serial Command field.</div>
+  ${sectionsHtml}
+</body>
+</html>`);
+      popup.document.close();
+      popup.focus();
     }
 
     function renderTestEvents(events) {
@@ -1002,51 +1165,6 @@
       }
     }
 
-    async function refreshTestPanel(logFailures = false) {
-      try {
-        const data = await fetchJson('/app/test/status');
-        const stateText = responseText(data.state?.response) || '-';
-        const procTimeText = responseText(data.proc_time?.response) || '-';
-        const fwText = responseText(data.fw_version?.response) || '-';
-        const hwText = responseText(data.hw_version?.response) || '-';
-        const laserTestText = responseText(data.laser_test_result?.response) || '-';
-        const lastErrorText = responseText(data.last_error?.response) || '-';
-        const events = Array.isArray(data.events) ? data.events : [];
-
-        document.getElementById('testAppState').textContent = stateText;
-        document.getElementById('testProcTime').textContent = procTimeText;
-        document.getElementById('testFwVersion').textContent = fwText;
-        document.getElementById('testHwVersion').textContent = hwText;
-        document.getElementById('testLaserResult').textContent = laserTestText;
-        document.getElementById('testLastError').textContent = lastErrorText;
-        renderTestEvents(events);
-
-        for (const event of events) {
-          const key = `${event.timestamp || ''}:${event.message || ''}`;
-          if (!knownTestEventKeys.has(key)) {
-            knownTestEventKeys.add(key);
-            updateLog(`Async test event: ${event.message}`);
-          }
-        }
-      } catch (err) {
-        if (logFailures) updateLog(`Test panel refresh failed: ${err.message || err}`);
-      }
-    }
-
-    async function runAppCommand(title, path, method = 'GET') {
-      updateLog(`Running ${title}...`);
-      try {
-        const data = await fetchJson(path, { method });
-        setTestResult(title, data.response ?? data);
-        updateLog(`${title} response received`);
-        await refreshAppErrors();
-        await refreshTestPanel();
-      } catch (err) {
-        setTestResult(`${title} failed`, String(err));
-        updateLog(`${title} failed: ${err}`);
-      }
-    }
-
     async function runRawSerialCommand() {
       const input = document.getElementById('rawSerialCommand');
       const command = input ? input.value.trim() : '';
@@ -1065,7 +1183,6 @@
         setTestResult(`Raw Command: ${command}`, data.response ?? data);
         await refreshAppErrors();
         await refreshSequenceStatus();
-        await refreshTestPanel();
       } catch (err) {
         setTestResult(`Raw Command failed: ${command}`, String(err));
         updateLog(`Raw serial command failed: ${err}`);
@@ -1076,7 +1193,10 @@
       const res = await fetch(`${API}${path}`, options);
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || JSON.stringify(data));
+        const parts = [];
+        if (data.error) parts.push(data.error);
+        if (data.raw) parts.push(`raw=${responseText(data.raw)}`);
+        throw new Error(parts.length ? parts.join(' | ') : JSON.stringify(data));
       }
       return data;
     }
@@ -1098,27 +1218,9 @@
 
     async function refreshLaserStatus(logFailures = false) {
       try {
-        const [arm, redDot, active, state] = await Promise.all([
-          fetchJson('/laser/arm_en'),
-          fetchJson('/laser/red_dot_en'),
-          fetchJson('/laser/is_active'),
-          fetchJson('/laser/state'),
-        ]);
-
+        const arm = await fetchJson('/laser/arm_en');
         const armText = responseText(arm.response);
-        const redDotText = responseText(redDot.response);
-        const activeText = responseText(active.response);
-        const stateText = responseText(state.response);
-
-        const armed = armText.includes('1');
-        isLaserArmed = armed;
-        document.getElementById('laserStatus').textContent = armed ? 'ARMED' : 'DISARMED';
-        document.getElementById('laserStatus').className = armed ? 'laser-armed' : 'laser-status';
-        document.getElementById('laserArmState').textContent = armText || '-';
-        document.getElementById('laserRedDotState').textContent = redDotText || '-';
-        document.getElementById('laserActiveState').textContent = activeText || '-';
-        document.getElementById('laserStateValue').textContent = stateText || '-';
-
+        isLaserArmed = armText.includes('1');
       } catch (err) {
         if (logFailures) updateLog(`Laser status refresh failed: ${err.message || err}`);
       }
@@ -1149,19 +1251,6 @@
       }
     }
 
-    async function updateSensorDisplay(logFailures = false) {
-      try {
-        const [tempData, dotData] = await Promise.all([
-          fetchJson('/laser/temp'),
-          fetchJson('/dot'),
-        ]);
-        document.getElementById('laserTemp').textContent = tempData.temp ?? '-';
-        document.getElementById('dotX').textContent = dotData.x ?? '-';
-        document.getElementById('dotY').textContent = dotData.y ?? '-';
-      } catch (err) {
-        if (logFailures) updateLog(`Sensor refresh failed: ${err.message || err}`);
-      }
-    }
     setInterval(() => pollAppErrorEvents(false), 1200);
     setInterval(() => pollSequenceEvents(false), 1200);
     setInterval(() => pollTestEvents(false), 1500);
@@ -1392,6 +1481,9 @@
       try {
         const data = await fetchJson(`/laser/channel_pwr?p808=${p808}&p980=${p980}&p1064=${p1064}`, {method: 'POST'});
         updateLog(`Response: ${responseText(data.response)}`);
+        if (data.pending_sync) {
+          updateLog('Laser powers staged locally and will auto-sync once the app is RUNNING and idle');
+        }
         await syncChannelPowerInputs();
         await refreshLaserStatus();
       } catch (err) {
@@ -1469,43 +1561,96 @@
 
     document.getElementById('cam').addEventListener('click', onVideoClick);
 
-    async function setSeqLength() {
-      const len = parseInt(document.getElementById('seqLen').value);
-      updateLog(`Setting sequence length: ${len}`);
+    async function updateTargetPoints() {
+      updateLog('Updating target points from captured detections...');
       try {
-        const data = await fetchJson(`/seq/length?length=${len}`, {method: 'POST'});
+        const data = await fetchJson('/seq/update_targets', {method: 'POST'});
+        document.getElementById('seqTargetCount').textContent = String(data.targets_count || 0);
+        updateLog(`Loaded ${data.targets_count || 0} target points`);
         updateLog(`Response: ${responseText(data.response)}`);
+        await refreshSequenceStatus();
       } catch (err) {
         updateLog(`Failed: ${err}`);
       }
     }
-    
-    async function startSeq() {
-      updateLog('Starting sequence (LIVE)...');
+
+    async function clearTargetPoints() {
+      updateLog('Removing target points from controller...');
+      try {
+        const data = await fetchJson('/seq/clear_targets', {method: 'POST'});
+        document.getElementById('seqTargetCount').textContent = String(data.targets_count || 0);
+        updateLog(`Response: ${responseText(data.response)}`);
+        await refreshSequenceStatus();
+      } catch (err) {
+        updateLog(`Failed: ${err}`);
+      }
+    }
+
+    async function setTargetMode(mode) {
+      const label = String(mode || '').toUpperCase();
+      updateLog(`Setting target mode to ${label}...`);
+      try {
+        const data = await fetchJson(`/seq/mode?mode=${encodeURIComponent(mode)}`, {method: 'POST'});
+        updateLog(`Response: ${responseText(data.response)}`);
+        await refreshSequenceStatus();
+      } catch (err) {
+        updateLog(`Failed: ${err}`);
+      }
+    }
+
+    async function stepTarget() {
+      updateLog('Stepping target sequence in manual mode...');
+      try {
+        const data = await fetchJson('/seq/step', {method: 'POST'});
+        if (data.targets_count !== undefined) {
+          document.getElementById('seqTargetCount').textContent = String(data.targets_count);
+        }
+        updateLog(`Response: ${responseText(data.response)}`);
+        await refreshSequenceStatus();
+      } catch (err) {
+        updateLog(`Failed: ${err}`);
+      }
+    }
+
+    async function getTargetStatus() {
+      updateLog('Fetching target status...');
+      try {
+        const data = await fetchJson('/seq/status');
+        const parts = [
+          `state=${responseText(data.state?.response) || '-'}`,
+          `mode=${responseText(data.mode?.response) || '-'}`,
+          `targets=${data.target_count ?? 0}`,
+          `last_error=${responseText(data.last_error?.response) || '-'}`,
+        ];
+        updateLog(`Target status: ${parts.join(' | ')}`);
+        await refreshSequenceStatus();
+      } catch (err) {
+        updateLog(`Failed: ${err}`);
+      }
+    }
+
+    async function shootAll() {
+      updateLog('Starting SHOOT ALL...');
       try {
         const data = await fetchJson('/seq/start', {method: 'POST'});
-        updateLog(`Response: ${responseText(data.response)}`);
+        if (data.targets_count !== undefined) {
+          document.getElementById('seqTargetCount').textContent = String(data.targets_count);
+        }
+        updateLog(`Shoot all response: ${responseText(data.response)}`);
         updateSequenceBadge('RUN');
+        await refreshSequenceStatus();
       } catch (err) {
         updateLog(`Failed: ${err}`);
       }
     }
-    
-    async function startSeqTest() {
-      updateLog('Starting sequence (TEST)...');
-      try {
-        const data = await fetchJson('/seq/start_test', {method: 'POST'});
-        updateLog(`Response: ${responseText(data.response)}`);
-        updateSequenceBadge('RUN');
-      } catch (err) {
-        updateLog(`Failed: ${err}`);
-      }
-    }
-    
+
     async function stopSeq() {
       updateLog('Stopping sequence...');
       try {
         const data = await fetchJson('/seq/stop', {method: 'POST'});
+        if (data.targets_count !== undefined) {
+          document.getElementById('seqTargetCount').textContent = String(data.targets_count);
+        }
         updateLog(`Response: ${responseText(data.response)}`);
         await refreshSequenceStatus();
       } catch (err) {
@@ -1517,19 +1662,11 @@
       updateLog('Halting sequence...');
       try {
         const data = await fetchJson('/seq/halt', {method: 'POST'});
+        if (data.targets_count !== undefined) {
+          document.getElementById('seqTargetCount').textContent = String(data.targets_count);
+        }
         updateLog(`Response: ${responseText(data.response)}`);
         await refreshSequenceStatus();
-      } catch (err) {
-        updateLog(`Failed: ${err}`);
-      }
-    }
-    
-    async function resumeSeq() {
-      updateLog('Resuming sequence...');
-      try {
-        const data = await fetchJson('/seq/resume', {method: 'POST'});
-        updateLog(`Response: ${responseText(data.response)}`);
-        updateSequenceBadge('RUN');
       } catch (err) {
         updateLog(`Failed: ${err}`);
       }
@@ -1586,8 +1723,10 @@
       
       // Connect SSE for live detection count
       connectDetectionSSE();
+      await loadCommandCatalog();
       updateWavelengthHighlights();
       await syncChannelPowerInputs(true);
+      await refreshAppErrors(true);
       await pollAppErrorEvents(true);
       await pollSequenceEvents(true);
       await pollTestEvents(true);

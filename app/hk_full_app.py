@@ -16,9 +16,10 @@ from pydantic import BaseModel
 
 from camera_handler import UVCInterface
 from detection_handler import ObjectDetector
-from detection_utils import remove_overlapping_boxes, get_box_centers, detect_red_dot
+from detection_utils import remove_overlapping_boxes, get_box_centers
 from galvo_handler import GalvoInterface
 from laser_handler import LaserInterface
+from serial_commands import COMMANDS
 from target_handler import TargetInterface
 from calibration_utils import (
     read_transformation_from_file,
@@ -59,9 +60,7 @@ _cam_frame_window = 0.25 # sec
 _stream_w, _stream_h = 960, 960  # stream output resolution (native is 1920x1920)
 _turbo = TurboJPEG()
 
-# Calibration state
-_calibration_points = []  # list of (image_pt, mover_pt) pairs
-_red_dot_detection_enabled = False  # toggle for red dot overlay
+# App state
 _red_dot_enabled = False  # hardware red dot state
 _app_error_events = deque(maxlen=25)
 _app_error_lock = threading.Lock()
@@ -277,20 +276,6 @@ def _generate_camera():
                     cv2.putText(frame, f"({int(cx)},{int(cy)})", (int(cx)+10, int(cy)-10),
                                cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)
         
-        # Red dot detection overlay (for calibration)
-        if _red_dot_detection_enabled:
-            try:
-                _, center = detect_red_dot(frame)
-                if center is not None:
-                    x, y = center
-                    cv2.circle(frame, (x, y), 25, (255, 0, 255), 3)
-                    cv2.line(frame, (x - 30, y), (x + 30, y), (0, 255, 255), 2)
-                    cv2.line(frame, (x, y - 30), (x, y + 30), (0, 255, 255), 2)
-                    cv2.putText(frame, f"({x}, {y})", (x + 35, y - 10),
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-            except Exception as e:
-                print(f"[RED DOT] Error: {e}", flush=True)
-        
         # Update detection count
         if current_count != _last_detection_count:
             _last_detection_count = current_count
@@ -360,15 +345,13 @@ def stats():
         "stream": {
             "width": _stream_w,
             "height": _stream_h,
-            "window_s": _cam_frame_window,
+        "window_s": _cam_frame_window,
         },
         "detection_enabled": _hair_detection_enabled,
         "detection_count": _last_detection_count,
-        "red_dot_detection_enabled": _red_dot_detection_enabled,
         "red_dot_enabled": _red_dot_enabled,
         "homography_loaded": _homography is not None,
         "detected_points": len(_detected_points),
-        "calibration_points": len(_calibration_points),
         "walking": _walking,
     }
 
@@ -494,6 +477,57 @@ def get_app_commands():
     return {"response": _laser.get_app_commands()}
 
 
+@app.get("/app/command_catalog")
+def get_app_command_catalog():
+    catalog = []
+    for name, meta in COMMANDS.items():
+        catalog.append(
+            {
+                "name": name,
+                "section": meta.get("section", ""),
+                "parameters": meta.get("parameters", ""),
+                "description": meta.get("description", ""),
+                "returns": meta.get("returns", ""),
+                "returns_nok": meta.get("returns_nok", ""),
+                "example": meta.get("example", ""),
+                "notes": meta.get("notes", ""),
+            }
+        )
+    catalog.sort(key=lambda item: (item["section"], item["name"]))
+    return {"commands": catalog}
+
+
+@app.get("/app/command_info")
+def get_app_command_info(command: str = Query(...)):
+    normalized = str(command).strip().split()[0] if str(command).strip() else ""
+    if not normalized:
+        return JSONResponse(status_code=400, content={"error": "Command is empty"})
+
+    meta = COMMANDS.get(normalized)
+    if meta is None:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "error": f"Unknown command: {normalized}",
+                "command": normalized,
+            },
+        )
+
+    return {
+        "command": normalized,
+        "meta": {
+            "name": meta.get("name", normalized),
+            "section": meta.get("section", ""),
+            "parameters": meta.get("parameters", ""),
+            "description": meta.get("description", ""),
+            "returns": meta.get("returns", ""),
+            "returns_nok": meta.get("returns_nok", ""),
+            "example": meta.get("example", ""),
+            "notes": meta.get("notes", ""),
+        },
+    }
+
+
 @app.get("/app/limits")
 def get_app_limits():
     if _laser is None:
@@ -595,6 +629,7 @@ def get_sequence_status():
 
     _drain_async_messages()
     state = _target.get_state()
+    mode = _target.get_mode()
     last_error = _target.get_last_error()
 
     with _sequence_lock:
@@ -602,7 +637,9 @@ def get_sequence_status():
 
     return {
         "state": state,
+        "mode": mode,
         "last_error": last_error,
+        "target_count": _target.get_target_count(),
         "events": events,
     }
 
@@ -633,31 +670,6 @@ def sse_galvo_pos():
                     data = json.dumps({"x": x, "y": y})
                     yield f"data: {data}\n\n"
             time.sleep(0.2)  # Check every 200ms
-    
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
-
-
-@app.get("/sse/dot")
-def sse_dot():
-    """Server-Sent Events endpoint for real-time red dot position updates."""
-    def event_stream():
-        last_x, last_y = None, None
-        while True:
-            frame, _ = _uvc.read()
-            if frame is not None:
-                _, center = detect_red_dot(frame)
-                if center is not None:
-                    x, y = int(center[0]), int(center[1])
-                    if x != last_x or y != last_y:
-                        last_x, last_y = x, y
-                        data = json.dumps({"x": x, "y": y})
-                        yield f"data: {data}\n\n"
-                else:
-                    if last_x is not None or last_y is not None:
-                        last_x, last_y = None, None
-                        data = json.dumps({"x": None, "y": None})
-                        yield f"data: {data}\n\n"
-            time.sleep(0.5)  # Check every 500ms
     
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
@@ -774,76 +786,35 @@ def clear_detected_points():
     return {"status": "cleared"}
 
 
-# ==================== Calibration ====================
-@app.get("/dot")
-def read_dot():
-    """Get red dot position from current frame."""
-    frame, _ = _uvc.read()
-    if frame is None:
-        return {"x": None, "y": None}
-    _, center = detect_red_dot(frame)
-    if center is None:
-        return {"x": None, "y": None}
-    return {"x": int(center[0]), "y": int(center[1])}
+def _build_target_points_from_detected():
+    if _target is None:
+        return None, JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
+    if not _detected_points:
+        return None, JSONResponse(status_code=400, content={"error": "No points"})
+    if _homography is None:
+        return None, JSONResponse(status_code=400, content={"error": "Homography unavailable"})
+
+    targets = []
+    for image_point in _detected_points:
+        try:
+            galvo_coord = transform_to_mover_coordinates(image_point, _homography)
+            tx, ty = int(round(galvo_coord[0])), int(round(galvo_coord[1]))
+            targets.append((tx, ty))
+        except Exception as exc:
+            return None, JSONResponse(
+                status_code=500,
+                content={"error": f"Failed to transform point {image_point}: {exc}"},
+            )
+
+    return targets, None
 
 
-@app.post("/calibration/detection/toggle")
-def toggle_red_dot_detection(enabled: bool = Query(...)):
-    """Toggle red dot detection overlay (for calibration)."""
-    global _red_dot_detection_enabled
-    _red_dot_detection_enabled = enabled
-    return {"red_dot_detection_enabled": _red_dot_detection_enabled}
-
-
-@app.get("/calibration/detection/status")
-def get_red_dot_detection_status():
-    return {"red_dot_detection_enabled": _red_dot_detection_enabled}
-
-
-@app.post("/calibration/start")
-def start_calibration():
-    """Clear calibration points to start fresh."""
-    _calibration_points.clear()
-    return {"status": "started"}
-
-
-@app.post("/calibration/store")
-def store_calibration_point():
-    """Store current red dot position + galvo position as calibration pair."""
-    frame, _ = _uvc.read()
-    pos = _galvo.get_position() if _galvo is not None else (None, None)
-    center = None
-    if frame is not None:
-        _, center = detect_red_dot(frame)
-    if center is not None and pos is not None:
-        _calibration_points.append(((int(center[0]), int(center[1])), (pos[0], pos[1])))
-        print(f"[CALIB STORE] Point #{len(_calibration_points)}: Image=({int(center[0])}, {int(center[1])})  Galvo=({pos[0]}, {pos[1]})", flush=True)
-    else:
-        print(f"[CALIB STORE] FAILED - Center={center}, Pos={pos}", flush=True)
-    return {"stored": len(_calibration_points)}
-
-
-@app.get("/calibration/points")
-def get_calibration_points():
-    """Return all stored calibration point pairs."""
-    return {"points": _calibration_points}
-
-
-@app.post("/calibration/save")
-def save_calibration():
-    """Calculate homography from stored points and save to file."""
-    if len(_calibration_points) < 4:
-        print(f"[CALIB SAVE] Not enough points: {len(_calibration_points)} < 4", flush=True)
-        return {"status": "need_more_points", "count": len(_calibration_points)}
-    print(f"[CALIB SAVE] Computing homography with {len(_calibration_points)} points", flush=True)
-    image_pts = [p[0] for p in _calibration_points]
-    mover_pts = [p[1] for p in _calibration_points]
-    H = calculate_homography(image_pts, mover_pts)
-    save_transformation_to_file(H)
-    with open("saved_coordinates.json", "w") as f:
-        json.dump(_calibration_points, f)
-    print(f"[CALIB SAVE] Homography saved to transformation_matrix.txt", flush=True)
-    return {"status": "saved", "count": len(_calibration_points)}
+def _load_targets_into_controller(targets):
+    resp = _target.set_seq_length(len(targets))
+    for idx, (tx, ty) in enumerate(targets):
+        resp.extend(_target.set_target_point(idx, tx, ty))
+    resp.extend(_target.load_targets())
+    return resp
 
 
 @app.post("/homography/reload")
@@ -1003,7 +974,20 @@ def set_laser_channel_power(
     if _laser is None:
         return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
     resp = _laser.set_channel_power(p808, p980, p1064)
-    return {"response": resp, "power": {"p808": p808, "p980": p980, "p1064": p1064}}
+    return {
+        "response": resp,
+        "power": {
+            "p808": int(_laser.channel_power[0]),
+            "p980": int(_laser.channel_power[1]),
+            "p1064": int(_laser.channel_power[2]),
+        },
+        "pending_sync": _laser.has_pending_channel_power(),
+        "active": {
+            "p808": bool(_laser.active[0]),
+            "p980": bool(_laser.active[1]),
+            "p1064": bool(_laser.active[2]),
+        },
+    }
 
 
 @app.get("/laser/channel_pwr")
@@ -1011,14 +995,23 @@ def get_laser_channel_power():
     if _laser is None:
         return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
     resp = _laser.get_channel_power()
-    power = _parse_channel_power_response(resp)
-    if power is None:
-        power = {
-            "p808": int(_laser.channel_power[0]),
-            "p980": int(_laser.channel_power[1]),
-            "p1064": int(_laser.channel_power[2]),
-        }
-    return {"response": resp, "power": power}
+    logical_power = {
+        "p808": int(_laser.channel_power[0]),
+        "p980": int(_laser.channel_power[1]),
+        "p1064": int(_laser.channel_power[2]),
+    }
+    raw_power = _parse_channel_power_response(resp)
+    return {
+        "response": resp,
+        "power": logical_power,
+        "raw_power": raw_power,
+        "pending_sync": _laser.has_pending_channel_power(),
+        "active": {
+            "p808": bool(_laser.active[0]),
+            "p980": bool(_laser.active[1]),
+            "p1064": bool(_laser.active[2]),
+        },
+    }
 
 
 @app.post("/laser/active")
@@ -1173,12 +1166,57 @@ def set_target_point(idx: int = Query(...), x: int = Query(...), y: int = Query(
     return {"response": resp, "idx": idx, "x": x, "y": y}
 
 
+@app.post("/seq/update_targets")
+def update_sequence_targets():
+    targets, error_response = _build_target_points_from_detected()
+    if error_response is not None:
+        return error_response
+
+    resp = _load_targets_into_controller(targets)
+    return {"response": resp, "targets_count": len(targets), "targets": targets}
+
+
+@app.post("/seq/clear_targets")
+def clear_sequence_targets():
+    if _target is None:
+        return JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
+    resp = _target.clear_targets()
+    return {"response": resp, "targets_count": 0}
+
+
+@app.post("/seq/mode")
+def set_sequence_mode(mode: str = Query(...)):
+    if _target is None:
+        return JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
+
+    normalized = str(mode).strip().lower()
+    if normalized in {"manual", "single", "step"}:
+        mode_value = TargetInterface.MODE_MANUAL
+        mode_name = "MANUAL"
+    elif normalized in {"auto", "all"}:
+        mode_value = TargetInterface.MODE_AUTO
+        mode_name = "AUTO"
+    else:
+        return JSONResponse(status_code=400, content={"error": f"Unsupported target mode: {mode}"})
+
+    resp = _target.set_mode(mode_value)
+    return {"response": resp, "mode": mode_name}
+
+
+@app.get("/seq/mode")
+def get_sequence_mode():
+    if _target is None:
+        return JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
+    resp = _target.get_mode()
+    return {"response": resp}
+
+
 @app.post("/seq/start")
 def start_seq():
     if _target is None:
         return JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
     resp = _target.start_seq()
-    return {"response": resp}
+    return {"response": resp, "targets_count": _target.get_target_count()}
 
 
 @app.post("/seq/start_test")
@@ -1186,7 +1224,7 @@ def start_seq_test():
     if _target is None:
         return JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
     resp = _target.start_seq_test()
-    return {"response": resp}
+    return {"response": resp, "targets_count": _target.get_target_count()}
 
 
 @app.post("/seq/stop")
@@ -1194,7 +1232,7 @@ def stop_seq():
     if _target is None:
         return JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
     resp = _target.stop_seq()
-    return {"response": resp}
+    return {"response": resp, "targets_count": _target.get_target_count()}
 
 
 @app.post("/seq/halt")
@@ -1202,15 +1240,22 @@ def halt_seq():
     if _target is None:
         return JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
     resp = _target.halt_seq()
-    return {"response": resp}
+    return {"response": resp, "targets_count": _target.get_target_count()}
 
 
-@app.post("/seq/resume")
-def resume_seq():
+@app.post("/seq/step")
+def step_seq():
     if _target is None:
         return JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
-    resp = _target.resume_seq()
-    return {"response": resp}
+
+    state = _target.get_state()
+    state_text = " ".join(str(line) for line in state).upper()
+    if "IDLE" in state_text:
+        _target.set_mode(TargetInterface.MODE_MANUAL)
+        resp = _target.start_seq_manual()
+    else:
+        resp = _target.resume_seq()
+    return {"response": resp, "state": state, "targets_count": _target.get_target_count()}
 
 
 # ==================== Fire Sequence with Detected Points ====================
