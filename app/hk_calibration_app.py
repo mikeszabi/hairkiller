@@ -49,8 +49,13 @@ _uvc = UVCInterface()
 # we already created `_galvo` above using the SerialDevice wrapper
 _calibration_points = []  # list of (image_pt, mover_pt) pairs
 _detection_enabled = False  # toggle for automatic red dot detection on frames
+_mask_overlay_enabled = False
 _red_dot_enabled = False
 _homography = None
+_hsv_lower1 = [0, 50, 250]
+_hsv_upper1 = [20, 240, 255]
+_hsv_lower2 = [160, 50, 250]
+_hsv_upper2 = [180, 240, 255]
 
 # attempt to load the homography at startup
 try:
@@ -74,6 +79,26 @@ def _response_has_enabled(lines) -> bool | None:
     return None
 
 
+def _clamp_hsv_value(value: int, channel: str) -> int:
+    upper = 180 if channel == "h" else 255
+    return max(0, min(upper, int(value)))
+
+
+def _current_hsv_bounds():
+    return tuple(_hsv_lower1), tuple(_hsv_upper1), tuple(_hsv_lower2), tuple(_hsv_upper2)
+
+
+def _detect_red_dot_with_current_hsv(frame):
+    lower1, upper1, lower2, upper2 = _current_hsv_bounds()
+    return detect_red_dot(
+        frame,
+        hsv_lower1=lower1,
+        hsv_upper1=upper1,
+        hsv_lower2=lower2,
+        hsv_upper2=upper2,
+    )
+
+
 def _generate_camera():
     """Stream frames from the camera as multipart JPEG.
     
@@ -89,8 +114,12 @@ def _generate_camera():
 
         # optionally perform detection and draw on frame
         if _detection_enabled:
-            mask, center = detect_red_dot(frame)
+            mask, center = _detect_red_dot_with_current_hsv(frame)
             print(f"[DETECTION] Frame {idx}: Detected center at {center}", flush=True)
+            if _mask_overlay_enabled:
+                overlay = frame.copy()
+                overlay[mask > 0] = (0, 255, 255)
+                cv2.addWeighted(overlay, 0.45, frame, 0.55, 0, frame)
             if center is not None:
                 x, y = center
                 # draw large magenta circle
@@ -163,7 +192,12 @@ def stats():
         "camera": _uvc.get_stats(),
         "settings": _uvc.get_settings(),
         "detection_enabled": _detection_enabled,
+        "mask_overlay_enabled": _mask_overlay_enabled,
         "red_dot_enabled": _red_dot_enabled,
+        "hsv_lower1": _hsv_lower1,
+        "hsv_upper1": _hsv_upper1,
+        "hsv_lower2": _hsv_lower2,
+        "hsv_upper2": _hsv_upper2,
         "homography_loaded": _homography is not None,
         "calibration_points": len(_calibration_points),
     }
@@ -180,10 +214,29 @@ def read_dot():
     frame, _ = _uvc.read()
     if frame is None:
         return {"x": None, "y": None}
-    mask, center = detect_red_dot(frame)
+    mask, center = _detect_red_dot_with_current_hsv(frame)
     if center is None:
         return {"x": None, "y": None}
     return {"x": int(center[0]), "y": int(center[1])}
+
+
+@app.get("/frame/hsv")
+def read_frame_hsv(x: int = Query(...), y: int = Query(...)):
+    frame, _ = _uvc.read()
+    if frame is None:
+        return JSONResponse(status_code=503, content={"error": "No frame available"})
+
+    height, width = frame.shape[:2]
+    if x < 0 or y < 0 or x >= width or y >= height:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Point outside frame", "width": width, "height": height},
+        )
+
+    hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    b, g, r = [int(v) for v in frame[y, x]]
+    h, s, v = [int(v) for v in hsv_frame[y, x]]
+    return {"x": x, "y": y, "hsv": [h, s, v], "bgr": [b, g, r], "rgb": [r, g, b]}
 
 
 @app.get("/sse/dot")
@@ -195,7 +248,7 @@ def sse_dot():
         while True:
             frame, _ = _uvc.read()
             if frame is not None:
-                _, center = detect_red_dot(frame)
+                _, center = _detect_red_dot_with_current_hsv(frame)
                 if center is not None:
                     x, y = int(center[0]), int(center[1])
                     if x != last_x or y != last_y:
@@ -371,9 +424,78 @@ def toggle_calibration_detection(enabled: bool = Query(...)):
     return toggle_detection(enabled)
 
 
+@app.post("/detection/mask_overlay")
+def set_mask_overlay(enabled: bool = Query(...)):
+    global _mask_overlay_enabled
+    _mask_overlay_enabled = enabled
+    return {"mask_overlay_enabled": _mask_overlay_enabled}
+
+
 @app.get("/detection/status")
 def get_detection_status():
-    return {"detection_enabled": _detection_enabled, "red_dot": _red_dot_enabled}
+    return {
+        "detection_enabled": _detection_enabled,
+        "mask_overlay_enabled": _mask_overlay_enabled,
+        "red_dot": _red_dot_enabled,
+        "hsv_lower1": _hsv_lower1,
+        "hsv_upper1": _hsv_upper1,
+        "hsv_lower2": _hsv_lower2,
+        "hsv_upper2": _hsv_upper2,
+    }
+
+
+@app.get("/detection/hsv")
+def get_detection_hsv():
+    return {
+        "hsv_lower1": _hsv_lower1,
+        "hsv_upper1": _hsv_upper1,
+        "hsv_lower2": _hsv_lower2,
+        "hsv_upper2": _hsv_upper2,
+    }
+
+
+@app.post("/detection/hsv")
+def set_detection_hsv(
+    lower1_h: int = Query(...),
+    lower1_s: int = Query(...),
+    lower1_v: int = Query(...),
+    upper1_h: int = Query(...),
+    upper1_s: int = Query(...),
+    upper1_v: int = Query(...),
+    lower2_h: int = Query(...),
+    lower2_s: int = Query(...),
+    lower2_v: int = Query(...),
+    upper2_h: int = Query(...),
+    upper2_s: int = Query(...),
+    upper2_v: int = Query(...),
+):
+    global _hsv_lower1, _hsv_upper1, _hsv_lower2, _hsv_upper2
+    _hsv_lower1 = [
+        _clamp_hsv_value(lower1_h, "h"),
+        _clamp_hsv_value(lower1_s, "s"),
+        _clamp_hsv_value(lower1_v, "v"),
+    ]
+    _hsv_upper1 = [
+        _clamp_hsv_value(upper1_h, "h"),
+        _clamp_hsv_value(upper1_s, "s"),
+        _clamp_hsv_value(upper1_v, "v"),
+    ]
+    _hsv_lower2 = [
+        _clamp_hsv_value(lower2_h, "h"),
+        _clamp_hsv_value(lower2_s, "s"),
+        _clamp_hsv_value(lower2_v, "v"),
+    ]
+    _hsv_upper2 = [
+        _clamp_hsv_value(upper2_h, "h"),
+        _clamp_hsv_value(upper2_s, "s"),
+        _clamp_hsv_value(upper2_v, "v"),
+    ]
+    print(
+        f"[DETECTION] HSV range1={_hsv_lower1}-{_hsv_upper1} "
+        f"range2={_hsv_lower2}-{_hsv_upper2}",
+        flush=True,
+    )
+    return get_detection_hsv()
 
 
 @app.post("/calibration/start")
@@ -388,7 +510,7 @@ def store_point():
     pos = _galvo.get_position() if _galvo is not None else (None, None)
     center = None
     if frame is not None:
-        _, center = detect_red_dot(frame)
+        _, center = _detect_red_dot_with_current_hsv(frame)
     if center is not None and pos is not None:
         _calibration_points.append(((int(center[0]), int(center[1])), (pos[0], pos[1])))
         print(f"[CALIB STORE] Point #{len(_calibration_points)}: Image=({int(center[0])}, {int(center[1])})  Galvo=({pos[0]}, {pos[1]})", flush=True)

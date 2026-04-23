@@ -11,6 +11,7 @@ import time
 import cv2
 import logging
 import json
+import numpy as np
 from turbojpeg import TurboJPEG
 from pydantic import BaseModel
 
@@ -55,6 +56,7 @@ _homography = None
 _walking = False
 _detection_conf = 0.1
 _current_target_image_pt = None
+_show_target_points_overlay = False
 _last_detection_count = 0
 _cam_frame_window = 0.25 # sec
 _stream_w, _stream_h = 960, 960  # stream output resolution (native is 1920x1920)
@@ -73,6 +75,28 @@ _test_lock = threading.Lock()
 _inference_cache = None
 _inference_lock = threading.Lock()
 _inference_thread = None
+
+
+def _sequence_target_image_points():
+    """Return loaded sequence targets projected back into native image coordinates."""
+    if _target is None or _homography is None or not _target.targets:
+        return []
+
+    try:
+        inverse_homography = np.linalg.inv(_homography)
+        galvo_points = np.array(
+            [[[float(x), float(y)]] for _, (x, y) in sorted(_target.targets.items())],
+            dtype=np.float32,
+        )
+        image_points = cv2.perspectiveTransform(galvo_points, inverse_homography)
+    except Exception as exc:
+        logging.warning("Failed to project sequence targets to image coordinates: %s", exc)
+        return []
+
+    return [
+        (int(round(point[0][0])), int(round(point[0][1])))
+        for point in image_points
+    ]
 
 _detector = None
 try:
@@ -279,6 +303,18 @@ def _generate_camera():
         # Update detection count
         if current_count != _last_detection_count:
             _last_detection_count = current_count
+
+        # Sequence target overlay. Targets are stored in galvo coordinates, so
+        # project them back through the inverse homography before drawing.
+        if _show_target_points_overlay:
+            target_points = _sequence_target_image_points()
+            if target_points:
+                overlay = frame.copy()
+                height, width = frame.shape[:2]
+                for tx, ty in target_points:
+                    if 0 <= tx < width and 0 <= ty < height:
+                        cv2.circle(overlay, (tx, ty), 18, (0, 255, 255), -1)
+                cv2.addWeighted(overlay, 0.5, frame, 0.5, 0, frame)
         
         # Target crosshair
         if _current_target_image_pt is not None:
@@ -640,6 +676,7 @@ def get_sequence_status():
         "mode": mode,
         "last_error": last_error,
         "target_count": _target.get_target_count(),
+        "show_target_points_overlay": _show_target_points_overlay,
         "events": events,
     }
 
@@ -1164,6 +1201,21 @@ def set_target_point(idx: int = Query(...), x: int = Query(...), y: int = Query(
         return JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
     resp = _target.set_target_point(idx, x, y)
     return {"response": resp, "idx": idx, "x": x, "y": y}
+
+
+@app.post("/seq/show_targets")
+def set_show_target_points(enabled: bool = Query(...)):
+    global _show_target_points_overlay
+    if _target is None:
+        return JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
+    if enabled and _homography is None:
+        return JSONResponse(status_code=400, content={"error": "Homography unavailable"})
+
+    _show_target_points_overlay = bool(enabled)
+    return {
+        "show_target_points_overlay": _show_target_points_overlay,
+        "targets_count": _target.get_target_count(),
+    }
 
 
 @app.post("/seq/update_targets")

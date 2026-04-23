@@ -586,6 +586,9 @@
           <button onclick="updateTargetPoints()" class="small-btn">Update Target Points</button>
           <button onclick="clearTargetPoints()" class="small-btn">Remove Target Points</button>
         </div>
+        <button id="showTargetPointsBtn" onclick="toggleTargetPointsOverlay()" class="small-btn warning-btn" style="width:100%;">
+          Show Target Points
+        </button>
         <div class="grid-2">
           <button onclick="setTargetMode('manual')" class="small-btn">Set Manual Mode</button>
           <button onclick="setTargetMode('auto')" class="small-btn">Set Auto Mode</button>
@@ -708,6 +711,7 @@
     let knownErrorEventKeys = new Set();
     let knownSequenceEventKeys = new Set();
     let knownTestEventKeys = new Set();
+    let showTargetPointsOverlay = false;
 
     function toggleSection(sectionName) {
       const section = document.getElementById(`section-${sectionName}`);
@@ -857,6 +861,14 @@
       }
     }
 
+    function updateTargetPointsOverlayButton() {
+      const btn = document.getElementById('showTargetPointsBtn');
+      if (!btn) return;
+      btn.textContent = showTargetPointsOverlay ? 'Hide Target Points' : 'Show Target Points';
+      btn.classList.toggle('success-btn', showTargetPointsOverlay);
+      btn.classList.toggle('warning-btn', !showTargetPointsOverlay);
+    }
+
     async function pollSequenceEvents(logFailures = false) {
       try {
         const data = await fetchJson('/seq/events');
@@ -885,6 +897,8 @@
         const targetCount = Number.isFinite(Number(data.target_count)) ? Number(data.target_count) : 0;
 
         document.getElementById('seqTargetCount').textContent = String(targetCount);
+        showTargetPointsOverlay = Boolean(data.show_target_points_overlay);
+        updateTargetPointsOverlayButton();
         updateSequenceBadge(latestEvent ? latestEvent.status : 'IDLE');
 
         for (const event of events) {
@@ -1583,6 +1597,23 @@
         await refreshSequenceStatus();
       } catch (err) {
         updateLog(`Failed: ${err}`);
+      }
+    }
+
+    async function toggleTargetPointsOverlay() {
+      const nextState = !showTargetPointsOverlay;
+      updateLog(`${nextState ? 'Showing' : 'Hiding'} target points on camera image...`);
+      try {
+        const data = await fetchJson(`/seq/show_targets?enabled=${nextState}`, {method: 'POST'});
+        showTargetPointsOverlay = Boolean(data.show_target_points_overlay);
+        updateTargetPointsOverlayButton();
+        if (data.targets_count !== undefined) {
+          document.getElementById('seqTargetCount').textContent = String(data.targets_count);
+        }
+        updateLog(`${showTargetPointsOverlay ? 'Showing' : 'Hidden'} target points overlay`);
+      } catch (err) {
+        updateLog(`Failed: ${err}`);
+        await refreshSequenceStatus();
       }
     }
 

@@ -80,6 +80,11 @@
     button:active { background: #666; }
     
     input[type=checkbox] { cursor: pointer; width: auto; padding: 4px; }
+    input[type=range] {
+      width: 100%;
+      cursor: pointer;
+      accent-color: #ffee44;
+    }
     
     .info-line {
       margin: 4px 0;
@@ -96,6 +101,35 @@
     .small-button { padding: 4px 8px; font-size: 12px; }
     
     input[type=number] { width: 70px; padding: 4px; }
+
+    .hsv-panel {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid #555;
+    }
+
+    .hsv-row {
+      display: grid;
+      grid-template-columns: 72px 1fr 34px;
+      gap: 8px;
+      align-items: center;
+      margin: 6px 0;
+      font-size: 12px;
+    }
+
+    .hsv-row label {
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      border: 0;
+      cursor: default;
+    }
+
+    .hsv-value {
+      font-family: monospace;
+      color: #ffee44;
+      text-align: right;
+    }
 
     .status-on { color: #44ff44; font-weight: bold; }
     .status-off { color: #ff6666; font-weight: bold; }
@@ -135,8 +169,96 @@
           <input id="detectionToggle" type="checkbox" onchange="toggleDetection()"> 
           Enable red dot detection overlay
         </label>
+        <label>
+          <input id="maskOverlayToggle" type="checkbox" onchange="toggleMaskOverlay()"> 
+          Show mask overlay
+        </label>
+        <label>
+          <input id="hsvInspectToggle" type="checkbox" onchange="toggleHsvInspectMode()"> 
+          HSV inspect click mode
+        </label>
         <div class="info-line">
           <span class="info-label">Dot in image:</span> X=<span id="dotImageX">-</span> Y=<span id="dotImageY">-</span>
+        </div>
+        <div class="info-line">
+          <span class="info-label">Clicked HSV:</span>
+          X=<span id="hsvClickX">-</span> Y=<span id="hsvClickY">-</span>
+          HSV=(<span id="hsvClickValue">-</span>)
+          RGB=(<span id="rgbClickValue">-</span>)
+        </div>
+        <div class="hsv-panel">
+          <div class="panel-title">HSV Limits</div>
+          <div class="info-line">
+            Red wraps around HSV hue, so detection uses two ranges: low hue and high hue.
+          </div>
+          <div class="panel-title">Range 1: Low Hue Red</div>
+          <div class="hsv-row">
+            <label for="hsvLower1H">Lower H</label>
+            <input id="hsvLower1H" type="range" min="0" max="180" value="0" oninput="onHsvSliderInput()">
+            <span id="hsvLower1HValue" class="hsv-value">0</span>
+          </div>
+          <div class="hsv-row">
+            <label for="hsvLower1S">Lower S</label>
+            <input id="hsvLower1S" type="range" min="0" max="255" value="50" oninput="onHsvSliderInput()">
+            <span id="hsvLower1SValue" class="hsv-value">50</span>
+          </div>
+          <div class="hsv-row">
+            <label for="hsvLower1V">Lower V</label>
+            <input id="hsvLower1V" type="range" min="0" max="255" value="250" oninput="onHsvSliderInput()">
+            <span id="hsvLower1VValue" class="hsv-value">250</span>
+          </div>
+          <div class="hsv-row">
+            <label for="hsvUpper1H">Upper H</label>
+            <input id="hsvUpper1H" type="range" min="0" max="180" value="20" oninput="onHsvSliderInput()">
+            <span id="hsvUpper1HValue" class="hsv-value">20</span>
+          </div>
+          <div class="hsv-row">
+            <label for="hsvUpper1S">Upper S</label>
+            <input id="hsvUpper1S" type="range" min="0" max="255" value="240" oninput="onHsvSliderInput()">
+            <span id="hsvUpper1SValue" class="hsv-value">240</span>
+          </div>
+          <div class="hsv-row">
+            <label for="hsvUpper1V">Upper V</label>
+            <input id="hsvUpper1V" type="range" min="0" max="255" value="255" oninput="onHsvSliderInput()">
+            <span id="hsvUpper1VValue" class="hsv-value">255</span>
+          </div>
+          <div class="panel-title">Range 2: High Hue Red</div>
+          <div class="hsv-row">
+            <label for="hsvLower2H">Lower H</label>
+            <input id="hsvLower2H" type="range" min="0" max="180" value="160" oninput="onHsvSliderInput()">
+            <span id="hsvLower2HValue" class="hsv-value">160</span>
+          </div>
+          <div class="hsv-row">
+            <label for="hsvLower2S">Lower S</label>
+            <input id="hsvLower2S" type="range" min="0" max="255" value="50" oninput="onHsvSliderInput()">
+            <span id="hsvLower2SValue" class="hsv-value">50</span>
+          </div>
+          <div class="hsv-row">
+            <label for="hsvLower2V">Lower V</label>
+            <input id="hsvLower2V" type="range" min="0" max="255" value="250" oninput="onHsvSliderInput()">
+            <span id="hsvLower2VValue" class="hsv-value">250</span>
+          </div>
+          <div class="hsv-row">
+            <label for="hsvUpper2H">Upper H</label>
+            <input id="hsvUpper2H" type="range" min="0" max="180" value="180" oninput="onHsvSliderInput()">
+            <span id="hsvUpper2HValue" class="hsv-value">180</span>
+          </div>
+          <div class="hsv-row">
+            <label for="hsvUpper2S">Upper S</label>
+            <input id="hsvUpper2S" type="range" min="0" max="255" value="240" oninput="onHsvSliderInput()">
+            <span id="hsvUpper2SValue" class="hsv-value">240</span>
+          </div>
+          <div class="hsv-row">
+            <label for="hsvUpper2V">Upper V</label>
+            <input id="hsvUpper2V" type="range" min="0" max="255" value="255" oninput="onHsvSliderInput()">
+            <span id="hsvUpper2VValue" class="hsv-value">255</span>
+          </div>
+          <div class="info-line">
+            Range 1: lower=(<span id="hsvLower1Text">0, 50, 250</span>) upper=(<span id="hsvUpper1Text">20, 240, 255</span>)
+          </div>
+          <div class="info-line">
+            Range 2: lower=(<span id="hsvLower2Text">160, 50, 250</span>) upper=(<span id="hsvUpper2Text">180, 240, 255</span>)
+          </div>
         </div>
       </div>
 
@@ -234,6 +356,107 @@
       return text.includes('->1') || text.includes('[1]') || text.endsWith(' 1');
     };
 
+    let hsvUpdateTimer = null;
+    let hsvInspectMode = false;
+
+    const hsvSliderIds = [
+      'hsvLower1H',
+      'hsvLower1S',
+      'hsvLower1V',
+      'hsvUpper1H',
+      'hsvUpper1S',
+      'hsvUpper1V',
+      'hsvLower2H',
+      'hsvLower2S',
+      'hsvLower2V',
+      'hsvUpper2H',
+      'hsvUpper2S',
+      'hsvUpper2V',
+    ];
+
+    const getHsvValues = () => ({
+      lower1_h: parseInt(document.getElementById('hsvLower1H').value, 10),
+      lower1_s: parseInt(document.getElementById('hsvLower1S').value, 10),
+      lower1_v: parseInt(document.getElementById('hsvLower1V').value, 10),
+      upper1_h: parseInt(document.getElementById('hsvUpper1H').value, 10),
+      upper1_s: parseInt(document.getElementById('hsvUpper1S').value, 10),
+      upper1_v: parseInt(document.getElementById('hsvUpper1V').value, 10),
+      lower2_h: parseInt(document.getElementById('hsvLower2H').value, 10),
+      lower2_s: parseInt(document.getElementById('hsvLower2S').value, 10),
+      lower2_v: parseInt(document.getElementById('hsvLower2V').value, 10),
+      upper2_h: parseInt(document.getElementById('hsvUpper2H').value, 10),
+      upper2_s: parseInt(document.getElementById('hsvUpper2S').value, 10),
+      upper2_v: parseInt(document.getElementById('hsvUpper2V').value, 10),
+    });
+
+    const renderHsvValues = () => {
+      for (const id of hsvSliderIds) {
+        document.getElementById(`${id}Value`).textContent = document.getElementById(id).value;
+      }
+
+      const values = getHsvValues();
+      document.getElementById('hsvLower1Text').textContent = `${values.lower1_h}, ${values.lower1_s}, ${values.lower1_v}`;
+      document.getElementById('hsvUpper1Text').textContent = `${values.upper1_h}, ${values.upper1_s}, ${values.upper1_v}`;
+      document.getElementById('hsvLower2Text').textContent = `${values.lower2_h}, ${values.lower2_s}, ${values.lower2_v}`;
+      document.getElementById('hsvUpper2Text').textContent = `${values.upper2_h}, ${values.upper2_s}, ${values.upper2_v}`;
+    };
+
+    const setHsvSliders = (lower1, upper1, lower2, upper2) => {
+      if (!Array.isArray(lower1) || !Array.isArray(upper1) || !Array.isArray(lower2) || !Array.isArray(upper2)) return;
+      document.getElementById('hsvLower1H').value = lower1[0];
+      document.getElementById('hsvLower1S').value = lower1[1];
+      document.getElementById('hsvLower1V').value = lower1[2];
+      document.getElementById('hsvUpper1H').value = upper1[0];
+      document.getElementById('hsvUpper1S').value = upper1[1];
+      document.getElementById('hsvUpper1V').value = upper1[2];
+      document.getElementById('hsvLower2H').value = lower2[0];
+      document.getElementById('hsvLower2S').value = lower2[1];
+      document.getElementById('hsvLower2V').value = lower2[2];
+      document.getElementById('hsvUpper2H').value = upper2[0];
+      document.getElementById('hsvUpper2S').value = upper2[1];
+      document.getElementById('hsvUpper2V').value = upper2[2];
+      renderHsvValues();
+    };
+
+    const updateHsvLimits = async () => {
+      const params = new URLSearchParams(getHsvValues());
+      const res = await fetch(`${API}/detection/hsv?${params.toString()}`, { method: 'POST' });
+      const data = await res.json();
+      setHsvSliders(data.hsv_lower1, data.hsv_upper1, data.hsv_lower2, data.hsv_upper2);
+      console.log('HSV limits updated:', data);
+    };
+
+    const onHsvSliderInput = () => {
+      renderHsvValues();
+      clearTimeout(hsvUpdateTimer);
+      hsvUpdateTimer = setTimeout(() => {
+        updateHsvLimits().catch((err) => console.error('HSV update failed:', err));
+      }, 120);
+    };
+
+    const loadHsvLimits = async () => {
+      try {
+        const res = await fetch(`${API}/detection/hsv`);
+        const data = await res.json();
+        setHsvSliders(data.hsv_lower1, data.hsv_upper1, data.hsv_lower2, data.hsv_upper2);
+      } catch (err) {
+        console.error('HSV load failed:', err);
+        renderHsvValues();
+      }
+    };
+
+    const loadDetectionStatus = async () => {
+      try {
+        const res = await fetch(`${API}/detection/status`);
+        const data = await res.json();
+        document.getElementById('detectionToggle').checked = Boolean(data.detection_enabled);
+        document.getElementById('maskOverlayToggle').checked = Boolean(data.mask_overlay_enabled);
+        setHsvSliders(data.hsv_lower1, data.hsv_upper1, data.hsv_lower2, data.hsv_upper2);
+      } catch (err) {
+        console.error('Detection status load failed:', err);
+      }
+    };
+
     const setStatus = (id, enabled, onText = 'ON', offText = 'OFF') => {
       const el = document.getElementById(id);
       if (enabled === null || enabled === undefined) {
@@ -268,6 +491,32 @@
       const res = await fetch(`${API}/calibration/detection/toggle?enabled=${checked}`, {method: 'POST'});
       const data = await res.json();
       console.log("Red dot detection toggled:", data);
+    };
+
+    const toggleMaskOverlay = async () => {
+      const checked = document.getElementById('maskOverlayToggle').checked;
+      const res = await fetch(`${API}/detection/mask_overlay?enabled=${checked}`, {method: 'POST'});
+      const data = await res.json();
+      console.log("Mask overlay toggled:", data);
+    };
+
+    const toggleHsvInspectMode = () => {
+      hsvInspectMode = document.getElementById('hsvInspectToggle').checked;
+      cam.style.cursor = hsvInspectMode ? 'copy' : 'crosshair';
+    };
+
+    const measureClickedHsv = async (x, y) => {
+      const res = await fetch(`${API}/frame/hsv?x=${x}&y=${y}`);
+      const data = await res.json();
+      if (data.error) {
+        console.error('HSV measure failed:', data);
+        return;
+      }
+
+      document.getElementById('hsvClickX').textContent = data.x;
+      document.getElementById('hsvClickY').textContent = data.y;
+      document.getElementById('hsvClickValue').textContent = data.hsv.join(', ');
+      document.getElementById('rgbClickValue').textContent = data.rgb.join(', ');
     };
 
     // ==================== Laser Control ====================
@@ -387,6 +636,11 @@
       document.getElementById('imgX').textContent = imgX;
       document.getElementById('imgY').textContent = imgY;
 
+      if (hsvInspectMode) {
+        await measureClickedHsv(imgX, imgY);
+        return;
+      }
+
       const r = await moveByImage(imgX, imgY);
       if (r.error) {
         document.getElementById('moveRes').textContent = '(homography not available)';
@@ -410,6 +664,8 @@
       }
     }
 
+    loadHsvLimits();
+    loadDetectionStatus();
     refreshLaserStatus();
   </script>
 </body>

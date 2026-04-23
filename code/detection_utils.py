@@ -130,7 +130,8 @@ def merge_predictions(predictions, original_shape, grid_size=(4, 3)):
 # ---------------------------------------------------------------------------
 # red dot helper
 
-def detect_red_dot(img, hsv_lower1=(160, 50, 250), hsv_upper1=(180, 240, 255),
+def detect_red_dot(img, hsv_lower1=(0, 50, 250), hsv_upper1=(20, 240, 255),
+                   hsv_lower2=(160, 50, 250), hsv_upper2=(180, 240, 255),
                    central_frac=0.75, blur=5):
     """Detect red dot in *img* and return (mask, center).
 
@@ -139,9 +140,9 @@ def detect_red_dot(img, hsv_lower1=(160, 50, 250), hsv_upper1=(180, 240, 255),
     img : ndarray
         BGR image.
     hsv_lower1, hsv_upper1 : 3-tuples
-        First HSV range for red (wraparound low end, ~0-10 hue).
+        First HSV range for red (low hue range, typically ~0-20).
     hsv_lower2, hsv_upper2 : 3-tuples
-        Second HSV range for red (wraparound high end, ~160-180 hue).
+        Second HSV range for red (high hue range, typically ~160-180).
     central_frac : float
         Fraction of width/height to keep centred (default 0.3).  Regions outside
         this box are zeroed in the mask.
@@ -160,8 +161,12 @@ def detect_red_dot(img, hsv_lower1=(160, 50, 250), hsv_upper1=(180, 240, 255),
 
     lower1 = np.array(hsv_lower1)
     upper1 = np.array(hsv_upper1)
+    lower2 = np.array(hsv_lower2)
+    upper2 = np.array(hsv_upper2)
 
-    mask = cv2.inRange(hsv, lower1, upper1)
+    mask1 = cv2.inRange(hsv, lower1, upper1)
+    mask2 = cv2.inRange(hsv, lower2, upper2)
+    mask = cv2.bitwise_or(mask1, mask2)
 
     # restrict to central area
     if central_frac is not None and 0 < central_frac <= 1.0:
