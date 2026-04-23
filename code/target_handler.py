@@ -40,9 +40,14 @@ class TargetInterface:
         self.channel_provider = channel_provider or (lambda: (0, 0, 0))
 
     # ---------- helpers ----------
-    def _send(self, cmd_name: str, *params):
+    def _send(self, cmd_name: str, *params, wait_s: float = 0.05, extra_read_window_s: float = 0.5):
         payload = build_command(cmd_name, *params)
-        return self.dev.query(payload, expect_prefix=None, extra_read_window_s=0.5)
+        return self.dev.query(
+            payload,
+            expect_prefix=None,
+            wait_s=wait_s,
+            extra_read_window_s=extra_read_window_s,
+        )
 
     # ---------- API ----------
     def set_las_pulse(self, pulse_ms: int):
@@ -110,8 +115,14 @@ class TargetInterface:
         if not self.targets:
             return ["ERROR: no targets set"]
 
+        # Bulk target loading sends one serial command per target. The default
+        # read window is intentionally longer for interactive commands, but it
+        # makes this path scale poorly with many targets.
+        load_wait_s = 0.01
+        load_read_window_s = 0.03
+
         # clear and load new targets
-        self._send("TARGET_CLEAR_TARGETS")
+        self._send("TARGET_CLEAR_TARGETS", wait_s=load_wait_s, extra_read_window_s=load_read_window_s)
 
         p808, p980, p1064 = self.channel_provider()
 
@@ -126,6 +137,8 @@ class TargetInterface:
                 p980,
                 p1064,
                 self.pulse_ms,
+                wait_s=load_wait_s,
+                extra_read_window_s=load_read_window_s,
             )
 
         if mode is not None:
