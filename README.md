@@ -165,34 +165,6 @@ uvicorn app.hk_calibration_app:app --reload
 
 After calibration, use the "Reload Homography" button to reload the matrix from disk if you've run a new calibration.
 
----
-
-### 🚀 Hair Detection & Galvo Walk App
-
-A full workflow for automated hair removal using YOLO follicle detection:
-
-**Start the server:**
-```bash
-source yolo_venv/bin/activate
-uvicorn app.hk_hair_walk_app:app --reload
-```
-
-**Open in browser:** `http://localhost:8000` → `app/hk_hair_walk_app.html`
-
-**Workflow:**
-
-1. **Enable detection overlay** – toggle the checkbox to see detected follicles drawn on the live video
-2. **Capture frame** – click "Capture Frame" to run inference on the current frame, detect all follicles, and collect their image coordinates
-3. **Review collected points** – the list shows all detected follicle coordinates
-4. **Start walking** – click "Start Walking" to:
-   - Transform all image coordinates to galvo coordinates using the saved homography
-   - Optimize the visit order using nearest-neighbor TSP
-   - Galvo visits each point in sequence with the optimized path
-5. **Monitor progress** – the status log and galvo position display show real-time updates
-
-Requires a saved `transformation_matrix.txt` from prior calibration.
-
----
 
 ### 🔥 Full Hair Removal Control App (`hk_full_app`)
 

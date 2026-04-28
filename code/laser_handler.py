@@ -221,6 +221,26 @@ class LaserInterface:
         """Get red dot state directly."""
         return self._send_cmd("LASER_GET_RED_DOT_EN")
 
+    def set_peltier_cooling_enabled(self, enabled: bool):
+        """Enable or disable Peltier cooling."""
+        return self._send_cmd("PELTIER_SET_COOLING_EN", 1 if enabled else 0)
+
+    def get_peltier_cooling_enabled(self):
+        """Get whether Peltier cooling is enabled."""
+        return self._send_cmd("PELTIER_GET_COOLING_EN")
+
+    def get_peltier_state(self):
+        """Get Peltier controller state."""
+        return self._send_cmd("PELTIER_GET_STATE")
+
+    def get_peltier_last_error(self):
+        """Get the last Peltier error."""
+        return self._send_cmd("PELTIER_GET_LAST_ERROR")
+
+    def clear_peltier_error(self):
+        """Clear Peltier error state."""
+        return self._send_cmd("PELTIER_CLEAR_ERROR")
+
     def set_channel_power(self, p808: int, p980: int, p1064: int):
         """Set per-channel power from the UI.
 

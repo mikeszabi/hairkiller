@@ -436,6 +436,80 @@
     
     <div id="right">
 
+      <!-- TREATMENT -->
+      <div class="section" id="section-treatment">
+        <button class="section-header" type="button" onclick="toggleSection('treatment')">
+          <span class="section-title">💥 TREATMENT</span>
+          <span class="section-chevron">▼</span>
+        </button>
+        <div class="section-body">
+        <div class="panel">
+        <div class="grid-2">
+          <button onclick="armLaser()" class="small-btn success-btn">ARM</button>
+          <button onclick="disarmLaser()" class="small-btn danger-btn">DISARM</button>
+        </div>
+        <label class="info-line" style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+          <input id="treatArmed" type="checkbox">
+          <span class="info-label">Armed after settings update</span>
+        </label>
+        <div class="info-line">
+          <span class="info-label">Live Count:</span> <span id="treatLiveDetectionCount">0</span>
+        </div>
+        <div class="info-line">
+          <span class="info-label">Targets Ready:</span> <span id="treatTargetCount" class="mono">0</span>
+        </div>
+        <label>
+          <input id="treatDetectionToggle" type="checkbox" onchange="toggleDetection('treat')"> 
+          Detection On/OFF
+        </label>
+        <div style="margin-top:4px;">
+          <label class="info-label">Confidence:</label>
+          <input id="treatConfRange" type="range" min="0.01" max="1.0" step="0.01" value="0.10" onchange="onConfChange(this.value, 'treat')">
+          <span id="treatConfVal">0.10</span>
+        </div>
+
+        <div style="margin-top: 6px;">
+          <label class="info-label">Channel Current / Power (0-100):</label>
+          <div class="info-line">A wavelength is active when its current is not 0.</div>
+          <div class="wavelength-row">
+            <div class="wavelength-card" id="treatWave1064">
+              <label>
+                <span>1064nm</span>
+                <input id="treatP1064" type="number" min="0" max="100" value="0" oninput="updateWavelengthHighlights('treat')">
+              </label>
+            </div>
+            <div class="wavelength-card" id="treatWave980">
+              <label>
+                <span>980nm</span>
+                <input id="treatP980" type="number" min="0" max="100" value="0" oninput="updateWavelengthHighlights('treat')">
+              </label>
+            </div>
+            <div class="wavelength-card" id="treatWave808">
+              <label>
+                <span>808nm</span>
+                <input id="treatP808" type="number" min="0" max="100" value="0" oninput="updateWavelengthHighlights('treat')">
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top: 6px;">
+          <label class="info-label">Pulse Duration For Enabled Wavelengths (10-1000 ms):</label>
+          <input id="treatPulse" type="number" min="10" max="1000" value="100" style="width:100%; margin-top:4px;">
+        </div>
+
+        <div class="grid-2" style="margin-top: 8px;">
+          <button onclick="updateLaserSettingsFrom('treat')" class="small-btn success-btn">SET LASER</button>
+          <button onclick="detectHair()" class="small-btn warning-btn">DETECT HAIR</button>
+        </div>
+        <button id="treatmentShootAllBtn" onclick="shootAll('treatment')" class="small-btn success-btn emph-btn" style="width:100%; margin-top: 6px;" disabled>SHOOT ALL</button>
+        <div class="info-line" style="font-size:11px;color:#aaa;">
+          `DETECT HAIR` captures the current detections and updates the sequence target list.
+        </div>
+      </div>
+        </div>
+      </div>
+
       <!-- Status Log -->
       <div class="section" id="section-log">
         <button class="section-header" type="button" onclick="toggleSection('log')">
@@ -521,6 +595,10 @@
           <button onclick="armLaser()" class="small-btn success-btn">ARM</button>
           <button onclick="disarmLaser()" class="small-btn danger-btn">DISARM</button>
         </div>
+        <label class="info-line" style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+          <input id="lasArmed" type="checkbox">
+          <span class="info-label">Armed after settings update</span>
+        </label>
         
         <!-- Laser Settings -->
         <hr style="border-color:#555;margin:8px 0;" />
@@ -540,19 +618,19 @@
             <div class="wavelength-card" id="wave1064">
               <label>
                 <span>1064nm</span>
-                <input id="lasP1064" type="number" min="0" max="100" value="0" oninput="updateWavelengthHighlights()">
+                <input id="lasP1064" type="number" min="0" max="100" value="0" oninput="updateWavelengthHighlights('las')">
               </label>
             </div>
             <div class="wavelength-card" id="wave980">
               <label>
                 <span>980nm</span>
-                <input id="lasP980" type="number" min="0" max="100" value="0" oninput="updateWavelengthHighlights()">
+                <input id="lasP980" type="number" min="0" max="100" value="0" oninput="updateWavelengthHighlights('las')">
               </label>
             </div>
             <div class="wavelength-card" id="wave808">
               <label>
                 <span>808nm</span>
-                <input id="lasP808" type="number" min="0" max="100" value="0" oninput="updateWavelengthHighlights()">
+                <input id="lasP808" type="number" min="0" max="100" value="0" oninput="updateWavelengthHighlights('las')">
               </label>
             </div>
           </div>
@@ -565,6 +643,9 @@
             <input id="lasPulse" type="number" min="10" max="1000" value="100">
             <button onclick="setLasPulse()" class="small-btn">Set</button>
           </div>
+          <button onclick="updateLaserSettingsFrom('las')" class="small-btn success-btn" style="width:100%; margin-top: 6px;">
+            Update LASER Settings
+          </button>
           <button onclick="fireSingleShot()" class="small-btn danger-btn emph-btn" style="width:100%; margin-top: 6px;">FIRE</button>
         </div>
       </div>
@@ -596,7 +677,7 @@
         <div class="grid-3">
           <button onclick="getTargetStatus()" class="small-btn">Target Status</button>
           <button onclick="stepTarget()" class="small-btn warning-btn emph-btn">STEP</button>
-          <button onclick="shootAll()" class="small-btn success-btn emph-btn">SHOOT ALL</button>
+          <button id="sequenceShootAllBtn" onclick="shootAll('sequence')" class="small-btn success-btn emph-btn">SHOOT ALL</button>
         </div>
         <div class="grid-2">
           <button onclick="haltSeq()" class="small-btn warning-btn emph-btn">HALT</button>
@@ -712,6 +793,10 @@
     let knownSequenceEventKeys = new Set();
     let knownTestEventKeys = new Set();
     let showTargetPointsOverlay = false;
+    const laserControlGroups = ['las', 'treat'];
+    let loadedTargetCount = 0;
+    let laserSettingsConfigured = false;
+    let freshTargetsReadyForShootAll = false;
 
     function toggleSection(sectionName) {
       const section = document.getElementById(`section-${sectionName}`);
@@ -759,6 +844,7 @@
     
     function updateLiveDetectionCount(count) {
       const liveCountEl = document.getElementById('liveDetectionCount');
+      const treatLiveCountEl = document.getElementById('treatLiveDetectionCount');
       if (liveCountEl) {
         liveCountEl.textContent = count;
         if (count > 0) {
@@ -767,6 +853,33 @@
           liveCountEl.style.color = '#888';
         }
       }
+      if (treatLiveCountEl) {
+        treatLiveCountEl.textContent = count;
+        if (count > 0) {
+          treatLiveCountEl.style.color = '#0f0';
+        } else {
+          treatLiveCountEl.style.color = '#888';
+        }
+      }
+    }
+
+    function syncDetectionToggleInputs(enabled) {
+      ['detectionToggle', 'treatDetectionToggle'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.checked = !!enabled;
+      });
+    }
+
+    function syncDetectionConfidenceInputs(conf) {
+      const normalized = Number(conf).toFixed(2);
+      ['confVal', 'treatConfVal'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = normalized;
+      });
+      ['confRange', 'treatConfRange'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.value = normalized;
+      });
     }
     
     function log(msg) {
@@ -869,6 +982,30 @@
       btn.classList.toggle('warning-btn', !showTargetPointsOverlay);
     }
 
+    function setShootAllEnabled(enabled) {
+      const btn = document.getElementById('treatmentShootAllBtn');
+      if (!btn) return;
+      btn.disabled = !enabled;
+    }
+
+    function refreshShootAllAvailability() {
+      setShootAllEnabled(
+        loadedTargetCount > 0 &&
+        laserSettingsConfigured &&
+        isLaserArmed &&
+        freshTargetsReadyForShootAll
+      );
+    }
+
+    function updateTargetCountDisplays(targetCount) {
+      const normalized = Number.isFinite(Number(targetCount)) ? Number(targetCount) : 0;
+      document.getElementById('seqTargetCount').textContent = String(normalized);
+      const treatTargetCountEl = document.getElementById('treatTargetCount');
+      if (treatTargetCountEl) {
+        treatTargetCountEl.textContent = String(normalized);
+      }
+    }
+
     async function pollSequenceEvents(logFailures = false) {
       try {
         const data = await fetchJson('/seq/events');
@@ -896,7 +1033,9 @@
         const latestEvent = events.length > 0 ? events[0] : null;
         const targetCount = Number.isFinite(Number(data.target_count)) ? Number(data.target_count) : 0;
 
-        document.getElementById('seqTargetCount').textContent = String(targetCount);
+        loadedTargetCount = targetCount;
+        updateTargetCountDisplays(targetCount);
+        refreshShootAllAvailability();
         showTargetPointsOverlay = Boolean(data.show_target_points_overlay);
         updateTargetPointsOverlayButton();
         updateSequenceBadge(latestEvent ? latestEvent.status : 'IDLE');
@@ -1205,12 +1344,21 @@
 
     async function fetchJson(path, options = {}) {
       const res = await fetch(`${API}${path}`, options);
-      const data = await res.json();
+      const rawText = await res.text();
+      let data = null;
+
+      try {
+        data = rawText ? JSON.parse(rawText) : {};
+      } catch (err) {
+        const preview = rawText ? rawText.slice(0, 300) : '(empty response)';
+        throw new Error(`Non-JSON response from ${path} [${res.status}]: ${preview}`);
+      }
+
       if (!res.ok) {
         const parts = [];
         if (data.error) parts.push(data.error);
         if (data.raw) parts.push(`raw=${responseText(data.raw)}`);
-        throw new Error(parts.length ? parts.join(' | ') : JSON.stringify(data));
+        throw new Error(parts.length ? parts.join(' | ') : `${res.status} ${res.statusText} | ${JSON.stringify(data)}`);
       }
       return data;
     }
@@ -1235,8 +1383,56 @@
         const arm = await fetchJson('/laser/arm_en');
         const armText = responseText(arm.response);
         isLaserArmed = armText.includes('1');
+        laserControlGroups.forEach((prefix) => {
+          const armedInput = document.getElementById(`${prefix}Armed`);
+          if (armedInput) armedInput.checked = isLaserArmed;
+        });
+        refreshShootAllAvailability();
       } catch (err) {
         if (logFailures) updateLog(`Laser status refresh failed: ${err.message || err}`);
+      }
+    }
+
+    function logPeltierPrep(peltier) {
+      if (!peltier) return;
+      if (peltier.enable) {
+        updateLog(`Peltier cooling enable response: ${responseText(peltier.enable)}`);
+      } else if (peltier.enabled) {
+        updateLog('Peltier cooling already enabled');
+      }
+    }
+
+    function setLaserControlValues(values = {}) {
+      laserControlGroups.forEach((prefix) => {
+        const armedInput = document.getElementById(`${prefix}Armed`);
+        const p808Input = document.getElementById(`${prefix}P808`);
+        const p980Input = document.getElementById(`${prefix}P980`);
+        const p1064Input = document.getElementById(`${prefix}P1064`);
+        const pulseInput = document.getElementById(`${prefix}Pulse`);
+
+        if (armedInput && values.armed !== undefined) armedInput.checked = Boolean(values.armed);
+        if (p808Input && values.p808 !== undefined) p808Input.value = values.p808 ?? 0;
+        if (p980Input && values.p980 !== undefined) p980Input.value = values.p980 ?? 0;
+        if (p1064Input && values.p1064 !== undefined) p1064Input.value = values.p1064 ?? 0;
+        if (pulseInput && values.pulse_ms !== undefined) pulseInput.value = values.pulse_ms;
+      });
+      updateWavelengthHighlights();
+    }
+
+    async function syncLaserSettingsInputs(logFailures = false) {
+      try {
+        const data = await fetchJson('/laser/settings');
+        isLaserArmed = Boolean(data.armed);
+        setLaserControlValues({
+          armed: data.armed,
+          p808: data.power?.p808,
+          p980: data.power?.p980,
+          p1064: data.power?.p1064,
+          pulse_ms: data.pulse_ms,
+        });
+        refreshShootAllAvailability();
+      } catch (err) {
+        if (logFailures) updateLog(`Laser settings refresh failed: ${err.message || err}`);
       }
     }
 
@@ -1244,10 +1440,11 @@
       try {
         const data = await fetchJson('/laser/channel_pwr');
         if (data.power) {
-          document.getElementById('lasP808').value = data.power.p808 ?? 0;
-          document.getElementById('lasP980').value = data.power.p980 ?? 0;
-          document.getElementById('lasP1064').value = data.power.p1064 ?? 0;
-          updateWavelengthHighlights();
+          setLaserControlValues({
+            p808: data.power.p808,
+            p980: data.power.p980,
+            p1064: data.power.p1064,
+          });
           return;
         }
 
@@ -1255,10 +1452,11 @@
         const payload = text.includes('->') ? text.split('->').pop() : text;
         const values = payload.replace(/[\[\]\s]/g, '').split(',').filter(Boolean);
         if (values.length >= 3) {
-          document.getElementById('lasP808').value = values[0];
-          document.getElementById('lasP980').value = values[1];
-          document.getElementById('lasP1064').value = values[2];
-          updateWavelengthHighlights();
+          setLaserControlValues({
+            p808: values[0],
+            p980: values[1],
+            p1064: values[2],
+          });
         }
       } catch (err) {
         if (logFailures) updateLog(`Laser power refresh failed: ${err.message || err}`);
@@ -1310,12 +1508,11 @@
       try {
         const data = await fetchJson('/detection/status');
         if (data) {
-          document.getElementById('detectionToggle').checked = !!data.detection_enabled;
+          syncDetectionToggleInputs(data.detection_enabled);
           document.getElementById('detStatus').textContent = data.detection_enabled ? 'ON' : 'OFF';
           document.getElementById('detStatus').className = 'status-badge ' + (data.detection_enabled ? 'status-active' : 'status-idle');
           if (data.conf !== undefined) {
-            document.getElementById('confVal').textContent = Number(data.conf).toFixed(2);
-            document.getElementById('confRange').value = Number(data.conf).toFixed(2);
+            syncDetectionConfidenceInputs(data.conf);
           }
         }
       } catch (err) {
@@ -1323,11 +1520,13 @@
       }
     }
 
-    async function toggleDetection() {
-      const checked = document.getElementById('detectionToggle').checked;
+    async function toggleDetection(source = 'main') {
+      const toggleId = source === 'treat' ? 'treatDetectionToggle' : 'detectionToggle';
+      const checked = document.getElementById(toggleId).checked;
       try {
         await fetchJson(`/detection/toggle?enabled=${checked}`, {method: 'POST'});
         detectionOn = checked;
+        syncDetectionToggleInputs(checked);
         document.getElementById('detStatus').textContent = checked ? 'ON' : 'OFF';
         document.getElementById('detStatus').className = 'status-badge ' + (checked ? 'status-active' : 'status-idle');
         updateLog(`Detection ${checked ? 'enabled' : 'disabled'}`);
@@ -1336,13 +1535,13 @@
       }
     }
     
-    async function onConfChange(v) {
+    async function onConfChange(v, source = 'main') {
       const val = Number(v);
-      document.getElementById('confVal').textContent = val.toFixed(2);
+      syncDetectionConfidenceInputs(val);
       try {
         const data = await fetchJson(`/detection/conf?conf=${val}`, { method: 'POST' });
         if (data && data.conf !== undefined) {
-          document.getElementById('confVal').textContent = Number(data.conf).toFixed(2);
+          syncDetectionConfidenceInputs(data.conf);
         }
       } catch (err) {
         console.error('conf set failed', err);
@@ -1369,8 +1568,10 @@
         }
         updateLog(`Captured ${count} points`);
         updatePointsList(data.points || []);
+        return data;
       } catch (err) {
         updateLog(`Capture failed: ${err}`);
+        return null;
       }
     }
     
@@ -1428,6 +1629,7 @@
       updateLog('Arming laser...');
       try {
         const data = await fetchJson('/laser/arm', {method: 'POST'});
+        logPeltierPrep(data.peltier);
         updateLog(`Arm response: ${responseText(data.response)}`);
         await refreshLaserStatus();
       } catch (err) {
@@ -1462,17 +1664,36 @@
     }
     
     // ==================== Laser Settings ====================
-    function updateWavelengthHighlights() {
-      const channels = [
-        ['wave1064', 'lasP1064'],
-        ['wave980', 'lasP980'],
-        ['wave808', 'lasP808'],
-      ];
+    function clampNumberInput(id, fallback, min, max) {
+      const input = document.getElementById(id);
+      const parsed = parseInt(input.value, 10);
+      const value = Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : fallback;
+      input.value = value;
+      return value;
+    }
 
-      channels.forEach(([cardId, inputId]) => {
-        const card = document.getElementById(cardId);
-        const value = parseInt(document.getElementById(inputId).value || '0', 10);
-        card.classList.toggle('active', value > 0);
+    function updateWavelengthHighlights(prefix = null) {
+      const groups = prefix ? [prefix] : laserControlGroups;
+      groups.forEach((groupPrefix) => {
+        const channels = groupPrefix === 'las'
+          ? [
+              ['wave1064', 'lasP1064'],
+              ['wave980', 'lasP980'],
+              ['wave808', 'lasP808'],
+            ]
+          : [
+              [`${groupPrefix}Wave1064`, `${groupPrefix}P1064`],
+              [`${groupPrefix}Wave980`, `${groupPrefix}P980`],
+              [`${groupPrefix}Wave808`, `${groupPrefix}P808`],
+            ];
+
+        channels.forEach(([cardId, inputId]) => {
+          const card = document.getElementById(cardId);
+          const input = document.getElementById(inputId);
+          if (!card || !input) return;
+          const value = parseInt(input.value || '0', 10);
+          card.classList.toggle('active', value > 0);
+        });
       });
     }
 
@@ -1511,8 +1732,50 @@
       try {
         const data = await fetchJson(`/laser/pulse?pulse_ms=${pulse}`, {method: 'POST'});
         updateLog(`Response: ${responseText(data.response)}`);
+        setLaserControlValues({ pulse_ms: pulse });
       } catch (err) {
         updateLog(`Failed: ${err}`);
+      }
+    }
+
+    async function updateLaserSettings() {
+      return updateLaserSettingsFrom('las');
+    }
+
+    async function updateLaserSettingsFrom(prefix) {
+      const payload = {
+        armed: Boolean(document.getElementById(`${prefix}Armed`).checked),
+        p808: clampNumberInput(`${prefix}P808`, 0, 0, 100),
+        p980: clampNumberInput(`${prefix}P980`, 0, 0, 100),
+        p1064: clampNumberInput(`${prefix}P1064`, 0, 0, 100),
+        pulse_ms: clampNumberInput(`${prefix}Pulse`, 100, 10, 1000),
+        reload_targets: true,
+      };
+
+      updateLog(
+        `Updating LASER settings: armed=${payload.armed ? 'ON' : 'OFF'} ` +
+        `1064=${payload.p1064}% 980=${payload.p980}% 808=${payload.p808}% pulse=${payload.pulse_ms}ms`
+      );
+
+      try {
+        const data = await fetchJson('/laser/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        logPeltierPrep(data.response?.peltier);
+        updateLog(`Settings response: ${responseText(data.response)}`);
+        if (data.pending_sync) {
+          updateLog('Laser powers staged locally and will auto-sync once the app is RUNNING and idle');
+        }
+        if (data.targets_reloaded) {
+          updateLog(`Reloaded ${data.targets_count || 0} target points with current laser settings`);
+        }
+        laserSettingsConfigured = true;
+        await syncLaserSettingsInputs();
+        await refreshSequenceStatus();
+      } catch (err) {
+        updateLog(`Laser settings update failed: ${err}`);
       }
     }
 
@@ -1575,24 +1838,70 @@
 
     document.getElementById('cam').addEventListener('click', onVideoClick);
 
-    async function updateTargetPoints() {
+    async function updateTargetPoints(markFreshForShootAll = false) {
       updateLog('Updating target points from captured detections...');
       try {
         const data = await fetchJson('/seq/update_targets', {method: 'POST'});
-        document.getElementById('seqTargetCount').textContent = String(data.targets_count || 0);
-        updateLog(`Loaded ${data.targets_count || 0} target points`);
+        const targetCount = Number(data.targets_count || 0);
+        loadedTargetCount = targetCount;
+        freshTargetsReadyForShootAll = markFreshForShootAll && targetCount > 0;
+        updateTargetCountDisplays(targetCount);
+        refreshShootAllAvailability();
+        updateLog(`Loaded ${targetCount} target points`);
+        if (data.truncated) {
+          updateLog(`Too many detections (${data.detected_count}); limited target loading to ${data.max_targets} points for speed`);
+        }
+        if (data.load_ms !== undefined) {
+          updateLog(`Target loading time: ${data.load_ms} ms`);
+        }
         updateLog(`Response: ${responseText(data.response)}`);
         await refreshSequenceStatus();
+        return data;
       } catch (err) {
         updateLog(`Failed: ${err}`);
+        return null;
       }
+    }
+
+    async function detectHair() {
+      updateLog('Starting DETECT HAIR...');
+      const captured = await captureDetections();
+      if (!captured) {
+        updateLog('DETECT HAIR stopped because capture failed');
+        return;
+      }
+
+      const updated = await updateTargetPoints(true);
+      if (!updated) {
+        updateLog('DETECT HAIR captured points, but target loading failed');
+        return;
+      }
+
+      if (!showTargetPointsOverlay) {
+        updateLog('Showing target points overlay after DETECT HAIR...');
+        try {
+          const overlayData = await fetchJson('/seq/show_targets?enabled=true', {method: 'POST'});
+          showTargetPointsOverlay = Boolean(overlayData.show_target_points_overlay);
+          updateTargetPointsOverlayButton();
+          if (overlayData.targets_count !== undefined) {
+            updateTargetCountDisplays(overlayData.targets_count);
+          }
+        } catch (err) {
+          updateLog(`DETECT HAIR loaded targets, but could not show overlay: ${err}`);
+        }
+      }
+
+      updateLog(`DETECT HAIR ready: ${updated.targets_count || 0} target points loaded`);
     }
 
     async function clearTargetPoints() {
       updateLog('Removing target points from controller...');
       try {
         const data = await fetchJson('/seq/clear_targets', {method: 'POST'});
-        document.getElementById('seqTargetCount').textContent = String(data.targets_count || 0);
+        loadedTargetCount = Number(data.targets_count || 0);
+        freshTargetsReadyForShootAll = false;
+        updateTargetCountDisplays(data.targets_count || 0);
+        refreshShootAllAvailability();
         updateLog(`Response: ${responseText(data.response)}`);
         await refreshSequenceStatus();
       } catch (err) {
@@ -1608,7 +1917,7 @@
         showTargetPointsOverlay = Boolean(data.show_target_points_overlay);
         updateTargetPointsOverlayButton();
         if (data.targets_count !== undefined) {
-          document.getElementById('seqTargetCount').textContent = String(data.targets_count);
+          updateTargetCountDisplays(data.targets_count);
         }
         updateLog(`${showTargetPointsOverlay ? 'Showing' : 'Hidden'} target points overlay`);
       } catch (err) {
@@ -1634,7 +1943,7 @@
       try {
         const data = await fetchJson('/seq/step', {method: 'POST'});
         if (data.targets_count !== undefined) {
-          document.getElementById('seqTargetCount').textContent = String(data.targets_count);
+          updateTargetCountDisplays(data.targets_count);
         }
         updateLog(`Response: ${responseText(data.response)}`);
         await refreshSequenceStatus();
@@ -1660,13 +1969,42 @@
       }
     }
 
-    async function shootAll() {
-      updateLog('Starting SHOOT ALL...');
+    async function shootAll(source = 'sequence') {
+      if (source === 'treatment') {
+        const treatmentShootBtn = document.getElementById('treatmentShootAllBtn');
+        if (treatmentShootBtn && treatmentShootBtn.disabled) {
+          const reasons = [];
+          if (!laserSettingsConfigured) reasons.push('laser settings have not been applied yet');
+          if (!isLaserArmed) reasons.push('laser is not armed');
+          if (!(loadedTargetCount > 0)) reasons.push('no target points are loaded');
+          if (!freshTargetsReadyForShootAll) reasons.push('fresh target points from DETECT HAIR are required');
+          updateLog(`SHOOT ALL is disabled: ${reasons.join(' | ')}`);
+          return;
+        }
+      }
+
+      updateLog(`Starting SHOOT ALL${source === 'treatment' ? ' from TREATMENT' : ''}...`);
       try {
         const data = await fetchJson('/seq/start', {method: 'POST'});
         if (data.targets_count !== undefined) {
-          document.getElementById('seqTargetCount').textContent = String(data.targets_count);
+          loadedTargetCount = Number(data.targets_count);
+          updateTargetCountDisplays(data.targets_count);
         }
+        freshTargetsReadyForShootAll = false;
+        if (source === 'treatment' && showTargetPointsOverlay) {
+          try {
+            const overlayData = await fetchJson('/seq/show_targets?enabled=false', {method: 'POST'});
+            showTargetPointsOverlay = Boolean(overlayData.show_target_points_overlay);
+            updateTargetPointsOverlayButton();
+            if (overlayData.targets_count !== undefined) {
+              updateTargetCountDisplays(overlayData.targets_count);
+            }
+            updateLog('Target points overlay hidden after TREATMENT SHOOT ALL');
+          } catch (overlayErr) {
+            updateLog(`Could not hide target points after TREATMENT SHOOT ALL: ${overlayErr}`);
+          }
+        }
+        refreshShootAllAvailability();
         updateLog(`Shoot all response: ${responseText(data.response)}`);
         updateSequenceBadge('RUN');
         await refreshSequenceStatus();
@@ -1680,7 +2018,7 @@
       try {
         const data = await fetchJson('/seq/stop', {method: 'POST'});
         if (data.targets_count !== undefined) {
-          document.getElementById('seqTargetCount').textContent = String(data.targets_count);
+          updateTargetCountDisplays(data.targets_count);
         }
         updateLog(`Response: ${responseText(data.response)}`);
         await refreshSequenceStatus();
@@ -1694,7 +2032,7 @@
       try {
         const data = await fetchJson('/seq/halt', {method: 'POST'});
         if (data.targets_count !== undefined) {
-          document.getElementById('seqTargetCount').textContent = String(data.targets_count);
+          updateTargetCountDisplays(data.targets_count);
         }
         updateLog(`Response: ${responseText(data.response)}`);
         await refreshSequenceStatus();
@@ -1755,8 +2093,10 @@
       // Connect SSE for live detection count
       connectDetectionSSE();
       await loadCommandCatalog();
+      await setTargetMode('auto');
+      await refreshDetectionStatus(true);
       updateWavelengthHighlights();
-      await syncChannelPowerInputs(true);
+      await syncLaserSettingsInputs(true);
       await refreshAppErrors(true);
       await pollAppErrorEvents(true);
       await pollSequenceEvents(true);

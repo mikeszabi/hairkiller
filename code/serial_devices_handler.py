@@ -57,6 +57,11 @@ class SerialDevice:
     def _read_available_lines(self, max_lines: int = 50) -> List[str]:
         lines = []
         for _ in range(max_lines):
+            try:
+                if getattr(self.ser, "in_waiting", 0) <= 0:
+                    break
+            except Exception:
+                pass
             raw = self.ser.readline()
             if not raw:
                 break

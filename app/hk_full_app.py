@@ -12,6 +12,7 @@ import cv2
 import logging
 import json
 import numpy as np
+import re
 from turbojpeg import TurboJPEG
 from pydantic import BaseModel
 
@@ -61,6 +62,7 @@ _last_detection_count = 0
 _cam_frame_window = 0.25 # sec
 _stream_w, _stream_h = 960, 960  # stream output resolution (native is 1920x1920)
 _turbo = TurboJPEG()
+_max_sequence_targets = 50
 
 # App state
 _red_dot_enabled = False  # hardware red dot state
@@ -167,6 +169,15 @@ class RawCommandRequest(BaseModel):
     command: str
 
 
+class LaserSettingsRequest(BaseModel):
+    armed: bool
+    p808: int
+    p980: int
+    p1064: int
+    pulse_ms: int
+    reload_targets: bool = True
+
+
 def _parse_channel_power_response(lines):
     if not isinstance(lines, list):
         return None
@@ -257,6 +268,42 @@ def _record_test_event(raw_message: str) -> None:
     }
     with _test_lock:
         _test_events.appendleft(event)
+
+
+def _extract_single_value_response(lines) -> str | None:
+    if not isinstance(lines, list):
+        return None
+
+    for line in lines:
+        text = str(line).strip()
+        match = re.search(r"->\[(.*?)\]", text)
+        if match:
+            return match.group(1).strip()
+    return None
+
+
+def _is_enabled_response(lines) -> bool:
+    return _extract_single_value_response(lines) == "1"
+
+
+def _prepare_peltier_for_arming():
+    if _laser is None:
+        return None
+
+    status_resp = _laser.get_peltier_cooling_enabled()
+    if _is_enabled_response(status_resp):
+        return {
+            "status": status_resp,
+            "enable": None,
+            "enabled": True,
+        }
+
+    enable_resp = _laser.set_peltier_cooling_enabled(True)
+    return {
+        "status": status_resp,
+        "enable": enable_resp,
+        "enabled": _is_enabled_response(_laser.get_peltier_cooling_enabled()),
+    }
 
 
 def _drain_async_messages() -> None:
@@ -823,16 +870,16 @@ def clear_detected_points():
     return {"status": "cleared"}
 
 
-def _build_target_points_from_detected():
+def _build_target_points_from_image_points(image_points):
     if _target is None:
         return None, JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
-    if not _detected_points:
+    if not image_points:
         return None, JSONResponse(status_code=400, content={"error": "No points"})
     if _homography is None:
         return None, JSONResponse(status_code=400, content={"error": "Homography unavailable"})
 
     targets = []
-    for image_point in _detected_points:
+    for image_point in image_points:
         try:
             galvo_coord = transform_to_mover_coordinates(image_point, _homography)
             tx, ty = int(round(galvo_coord[0])), int(round(galvo_coord[1]))
@@ -846,12 +893,25 @@ def _build_target_points_from_detected():
     return targets, None
 
 
+def _build_target_points_from_detected():
+    limited_points = _detected_points[:_max_sequence_targets]
+    return _build_target_points_from_image_points(limited_points)
+
+
 def _load_targets_into_controller(targets):
     resp = _target.set_seq_length(len(targets))
     for idx, (tx, ty) in enumerate(targets):
         resp.extend(_target.set_target_point(idx, tx, ty))
     resp.extend(_target.load_targets())
     return resp
+
+
+def _reload_loaded_targets_into_controller():
+    if _target is None:
+        return ["ERROR: target controller unavailable"]
+    if not _target.targets:
+        return ["TARGET_COUNT=0"]
+    return _target.load_targets()
 
 
 @app.post("/homography/reload")
@@ -940,8 +1000,13 @@ def stop_walking():
 def set_laser_arm_enabled(enabled: bool = Query(...)):
     if _laser is None:
         return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+
+    peltier = None
+    if enabled:
+        peltier = _prepare_peltier_for_arming()
+
     resp = _laser.set_arm_enabled(enabled)
-    return {"response": resp, "enabled": enabled}
+    return {"response": resp, "enabled": enabled, "peltier": peltier}
 
 
 @app.get("/laser/arm_en")
@@ -956,8 +1021,9 @@ def get_laser_arm_enabled():
 def arm_laser():
     if _laser is None:
         return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    peltier = _prepare_peltier_for_arming()
     resp = _laser.arm_laser()
-    return {"response": resp}
+    return {"response": resp, "peltier": peltier}
 
 
 @app.post("/laser/disarm")
@@ -1113,6 +1179,80 @@ def set_las_pulse(pulse_ms: int = Query(...)):
     return {"response": resp, "pulse_ms": pulse_ms}
 
 
+@app.get("/laser/settings")
+def get_laser_settings():
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    if _target is None:
+        return JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
+
+    arm_resp = _laser.get_arm_enabled()
+    arm_text = " ".join(str(line) for line in arm_resp)
+    armed = "1" in arm_text
+    power_resp = _laser.get_channel_power()
+
+    return {
+        "response": {
+            "arm": arm_resp,
+            "power": power_resp,
+        },
+        "armed": armed,
+        "power": {
+            "p808": int(_laser.channel_power[0]),
+            "p980": int(_laser.channel_power[1]),
+            "p1064": int(_laser.channel_power[2]),
+        },
+        "pulse_ms": int(_target.pulse_ms),
+        "pending_sync": _laser.has_pending_channel_power(),
+        "targets_count": _target.get_target_count(),
+    }
+
+
+@app.post("/laser/settings")
+def update_laser_settings(settings: LaserSettingsRequest):
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    if _target is None:
+        return JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
+
+    responses = {}
+
+    # If the operator requested a disarmed state, do it before changing anything
+    # else. If they requested armed, arm only after settings are applied.
+    if not settings.armed:
+        responses["arm"] = _laser.disarm_laser()
+
+    responses["power"] = _laser.set_channel_power(
+        settings.p808,
+        settings.p980,
+        settings.p1064,
+    )
+    responses["pulse"] = _target.set_las_pulse(settings.pulse_ms)
+
+    targets_reloaded = False
+    if settings.reload_targets and _target.targets:
+        responses["targets"] = _reload_loaded_targets_into_controller()
+        targets_reloaded = True
+
+    if settings.armed:
+        responses["peltier"] = _prepare_peltier_for_arming()
+        responses["arm"] = _laser.arm_laser()
+
+    return {
+        "response": responses,
+        "armed": bool(settings.armed),
+        "power": {
+            "p808": int(_laser.channel_power[0]),
+            "p980": int(_laser.channel_power[1]),
+            "p1064": int(_laser.channel_power[2]),
+        },
+        "pulse_ms": int(_target.pulse_ms),
+        "pending_sync": _laser.has_pending_channel_power(),
+        "targets_reloaded": targets_reloaded,
+        "targets_count": _target.get_target_count(),
+    }
+
+
 @app.post("/laser/red_dot")
 def set_red_dot(enabled: bool = Query(...)):
     global _red_dot_enabled
@@ -1220,12 +1360,34 @@ def set_show_target_points(enabled: bool = Query(...)):
 
 @app.post("/seq/update_targets")
 def update_sequence_targets():
+    original_count = len(_detected_points)
     targets, error_response = _build_target_points_from_detected()
     if error_response is not None:
         return error_response
 
-    resp = _load_targets_into_controller(targets)
-    return {"response": resp, "targets_count": len(targets), "targets": targets}
+    try:
+        start_ts = time.perf_counter()
+        resp = _load_targets_into_controller(targets)
+        load_ms = round((time.perf_counter() - start_ts) * 1000.0, 1)
+        return {
+            "response": resp,
+            "targets_count": len(targets),
+            "detected_count": original_count,
+            "max_targets": _max_sequence_targets,
+            "truncated": original_count > len(targets),
+            "targets": targets,
+            "load_ms": load_ms,
+        }
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": f"Failed to load targets into controller: {exc}",
+                "targets_count": len(targets),
+                "detected_count": original_count,
+                "max_targets": _max_sequence_targets,
+            },
+        )
 
 
 @app.post("/seq/clear_targets")
@@ -1267,32 +1429,76 @@ def get_sequence_mode():
 def start_seq():
     if _target is None:
         return JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
-    resp = _target.start_seq()
-    return {"response": resp, "targets_count": _target.get_target_count()}
+    try:
+        resp = _target.start_seq()
+        return {"response": resp, "targets_count": _target.get_target_count()}
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": f"Failed to start target sequence: {exc}",
+                "targets_count": _target.get_target_count(),
+                "state": _target.get_state(),
+                "last_error": _target.get_last_error(),
+            },
+        )
 
 
 @app.post("/seq/start_test")
 def start_seq_test():
     if _target is None:
         return JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
-    resp = _target.start_seq_test()
-    return {"response": resp, "targets_count": _target.get_target_count()}
+    try:
+        resp = _target.start_seq_test()
+        return {"response": resp, "targets_count": _target.get_target_count()}
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": f"Failed to start test target sequence: {exc}",
+                "targets_count": _target.get_target_count(),
+                "state": _target.get_state(),
+                "last_error": _target.get_last_error(),
+            },
+        )
 
 
 @app.post("/seq/stop")
 def stop_seq():
     if _target is None:
         return JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
-    resp = _target.stop_seq()
-    return {"response": resp, "targets_count": _target.get_target_count()}
+    try:
+        resp = _target.stop_seq()
+        return {"response": resp, "targets_count": _target.get_target_count()}
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": f"Failed to stop target sequence: {exc}",
+                "targets_count": _target.get_target_count(),
+                "state": _target.get_state(),
+                "last_error": _target.get_last_error(),
+            },
+        )
 
 
 @app.post("/seq/halt")
 def halt_seq():
     if _target is None:
         return JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
-    resp = _target.halt_seq()
-    return {"response": resp, "targets_count": _target.get_target_count()}
+    try:
+        resp = _target.halt_seq()
+        return {"response": resp, "targets_count": _target.get_target_count()}
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": f"Failed to halt target sequence: {exc}",
+                "targets_count": _target.get_target_count(),
+                "state": _target.get_state(),
+                "last_error": _target.get_last_error(),
+            },
+        )
 
 
 @app.post("/seq/step")
@@ -1318,44 +1524,25 @@ def fire_walk(test_mode: bool = Query(False)):
     set them as sequence targets, and fire.
     If test_mode=True, uses START_SEQ_TEST, else START_SEQ.
     """
-    if _target is None:
-        return JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
-    
-    if not _detected_points:
-        return JSONResponse(status_code=400, content={"error": "No points"})
-    
-    if _homography is None:
-        return JSONResponse(status_code=400, content={"error": "Homography unavailable"})
-    
-    # Optimize path
     optimized_image_points = _nearest_neighbor_tsp(_detected_points)
-    
-    # Transform to galvo and set targets
-    targets = []
-    for i, img_pt in enumerate(optimized_image_points):
-        try:
-            galvo_coord = transform_to_mover_coordinates(img_pt, _homography)
-            tx, ty = int(round(galvo_coord[0])), int(round(galvo_coord[1]))
-            targets.append((i, tx, ty))
-        except Exception as e:
-            print(f"[FIRE] Transform error: {e}", flush=True)
-    
-    # Set sequence length
-    _target.set_seq_length(len(targets))
-    
-    # Set all targets
-    for idx, x, y in targets:
-        _target.set_target_point(idx, x, y)
-    
+    targets, error_response = _build_target_points_from_image_points(optimized_image_points)
+    if error_response is not None:
+        return error_response
+
+    load_resp = _load_targets_into_controller(targets)
+
     # Start sequence
     if test_mode:
-        resp = _target.start_seq_test()
+        start_resp = _target.start_seq_test()
     else:
-        resp = _target.start_seq()
+        start_resp = _target.start_seq()
     
     return {
         "status": "firing",
         "test_mode": test_mode,
         "targets_count": len(targets),
-        "response": resp
+        "response": {
+            "load": load_resp,
+            "start": start_resp,
+        },
     }
