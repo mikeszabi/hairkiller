@@ -200,12 +200,17 @@ def _sensor_values() -> dict[str, float]:
         "updateTimestamp_ms": float(_uptime_ms()),
     }
     for field in SENSOR_FIELDS:
-        values.setdefault(field, 0.0)
+        field_name = field.get("name") if isinstance(field, dict) else field
+        if field_name:
+            values.setdefault(str(field_name), 0.0)
     return values
 
 
 def _raw_sensor_line(values: dict[str, float]) -> list[str]:
-    ordered = [values.get(field, 0.0) for field in SENSOR_FIELDS] if SENSOR_FIELDS else list(values.values())
+    ordered = [
+        values.get(str(field.get("name") if isinstance(field, dict) else field), 0.0)
+        for field in SENSOR_FIELDS
+    ] if SENSOR_FIELDS else list(values.values())
     payload = ",".join(f"{value:.2f}" for value in ordered)
     return [f"[SENSORS_GET_VALUES]->[{payload}][{_uptime_ms()}]"]
 
