@@ -181,6 +181,18 @@ def _append_test_event(kind: str, status: str) -> None:
     )
 
 
+def _sensor_field_dict_key(field) -> str | None:
+    if isinstance(field, dict):
+        return field.get("dict_key") or field.get("raw_key") or field.get("name")
+    return field
+
+
+def _sensor_field_raw_key(field) -> str | None:
+    if isinstance(field, dict):
+        return field.get("raw_key") or field.get("dict_key") or field.get("name")
+    return field
+
+
 def _sensor_values() -> dict[str, float]:
     values = {
         "inputCurrent_mA": 680.0,
@@ -200,7 +212,7 @@ def _sensor_values() -> dict[str, float]:
         "updateTimestamp_ms": float(_uptime_ms()),
     }
     for field in SENSOR_FIELDS:
-        field_name = field.get("name") if isinstance(field, dict) else field
+        field_name = _sensor_field_dict_key(field)
         if field_name:
             values.setdefault(str(field_name), 0.0)
     return values
@@ -208,9 +220,12 @@ def _sensor_values() -> dict[str, float]:
 
 def _raw_sensor_line(values: dict[str, float]) -> list[str]:
     ordered = [
-        values.get(str(field.get("name") if isinstance(field, dict) else field), 0.0)
-        for field in SENSOR_FIELDS
+        values.get(str(field_name), 0.0)
+        for field_name in (_sensor_field_raw_key(field) for field in SENSOR_FIELDS)
+        if field_name
     ] if SENSOR_FIELDS else list(values.values())
+    if SENSOR_FIELDS and len(ordered) < len(SENSOR_FIELDS):
+        ordered.extend([0.0] * (len(SENSOR_FIELDS) - len(ordered)))
     payload = ",".join(f"{value:.2f}" for value in ordered)
     return [f"[SENSORS_GET_VALUES]->[{payload}][{_uptime_ms()}]"]
 
