@@ -421,6 +421,34 @@
     .test-event-entry.watchdog {
       border-left-color: #ff7a00;
     }
+
+    .control-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin: 4px 0;
+      padding: 6px;
+      background: #242424;
+      border: 1px solid #4c4c4c;
+      border-radius: 3px;
+    }
+
+    .control-row label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+      min-width: 0;
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      border: 0;
+    }
+
+    .control-row input[type=checkbox] {
+      flex: 0 0 auto;
+    }
   </style>
 </head>
 <body>
@@ -452,6 +480,22 @@
           <input id="treatArmed" type="checkbox">
           <span class="info-label">Armed after settings update</span>
         </label>
+        <div style="margin-top: 8px;">
+          <div class="control-row">
+            <label>
+              <input id="treatVacuumOn" type="checkbox" onchange="toggleVacuum('treat')">
+              <span class="info-label">Vacuum On/OFF</span>
+            </label>
+            <span id="treatVacuumOnBadge" class="status-badge status-idle">OFF</span>
+          </div>
+          <div class="control-row">
+            <label>
+              <input id="treatVacuumCheck" type="checkbox" onchange="toggleVacuumCheck('treat')">
+              <span class="info-label">Vacuum Check On/OFF</span>
+            </label>
+            <span id="treatVacuumCheckBadge" class="status-badge status-idle">OFF</span>
+          </div>
+        </div>
         <div class="info-line">
           <span class="info-label">Live Count:</span> <span id="treatLiveDetectionCount">0</span>
         </div>
@@ -752,6 +796,33 @@
         </div>
       </div>
 
+      <!-- VACUUM -->
+      <div class="section collapsed" id="section-vacuum">
+        <button class="section-header" type="button" onclick="toggleSection('vacuum')">
+          <span class="section-title">🌀 VACUUM <span id="vacuumPanelStatusBadge" class="status-badge status-idle">OFF</span></span>
+          <span class="section-chevron">▼</span>
+        </button>
+        <div class="section-body">
+        <div class="panel">
+        <div class="control-row">
+          <label>
+            <input id="vacuumPanelOn" type="checkbox" onchange="toggleVacuum('panel')">
+            <span class="info-label">Vacuum On/OFF</span>
+          </label>
+          <span id="vacuumPanelOnBadge" class="status-badge status-idle">OFF</span>
+        </div>
+        <div class="control-row">
+          <label>
+            <input id="vacuumPanelCheck" type="checkbox" onchange="toggleVacuumCheck('panel')">
+            <span class="info-label">Vacuum Check On/OFF</span>
+          </label>
+          <span id="vacuumPanelCheckBadge" class="status-badge status-idle">OFF</span>
+        </div>
+        <button onclick="refreshVacuumStatus(true)" class="small-btn" style="width:100%; margin-top: 6px;">Refresh Vacuum Status</button>
+      </div>
+        </div>
+      </div>
+
       <!-- Errors -->
       <div class="section" id="section-errors">
         <button class="section-header" type="button" onclick="toggleSection('errors')">
@@ -797,6 +868,8 @@
     let loadedTargetCount = 0;
     let laserSettingsConfigured = false;
     let freshTargetsReadyForShootAll = false;
+    let vacuumOn = false;
+    let vacuumCheckOn = false;
 
     function toggleSection(sectionName) {
       const section = document.getElementById(`section-${sectionName}`);
@@ -1463,6 +1536,85 @@
       }
     }
 
+    function setVacuumBadge(id, enabled) {
+      const badge = document.getElementById(id);
+      if (!badge) return;
+      badge.textContent = enabled ? 'ON' : 'OFF';
+      badge.className = 'status-badge ' + (enabled ? 'status-active' : 'status-idle');
+    }
+
+    function syncVacuumControls(values = {}) {
+      if (values.vacuum_on !== undefined && values.vacuum_on !== null) {
+        vacuumOn = Boolean(values.vacuum_on);
+      }
+      if (values.check_vacuum_enabled !== undefined && values.check_vacuum_enabled !== null) {
+        vacuumCheckOn = Boolean(values.check_vacuum_enabled);
+      }
+
+      ['treatVacuumOn', 'vacuumPanelOn'].forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.checked = vacuumOn;
+      });
+      ['treatVacuumCheck', 'vacuumPanelCheck'].forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.checked = vacuumCheckOn;
+      });
+
+      ['treatVacuumOnBadge', 'vacuumPanelOnBadge', 'vacuumPanelStatusBadge'].forEach((id) => {
+        setVacuumBadge(id, vacuumOn);
+      });
+      ['treatVacuumCheckBadge', 'vacuumPanelCheckBadge'].forEach((id) => {
+        setVacuumBadge(id, vacuumCheckOn);
+      });
+    }
+
+    async function refreshVacuumStatus(logFailures = false) {
+      try {
+        const data = await fetchJson('/vacuum/status');
+        syncVacuumControls({
+          vacuum_on: data.vacuum_on,
+          check_vacuum_enabled: data.check_vacuum_enabled,
+        });
+      } catch (err) {
+        if (logFailures) updateLog(`Vacuum status refresh failed: ${err.message || err}`);
+      }
+    }
+
+    async function toggleVacuum(source = 'panel') {
+      const inputId = source === 'treat' ? 'treatVacuumOn' : 'vacuumPanelOn';
+      const input = document.getElementById(inputId);
+      const nextState = Boolean(input && input.checked);
+      const endpoint = nextState ? '/vacuum/on' : '/vacuum/off';
+
+      updateLog(`Turning vacuum ${nextState ? 'ON' : 'OFF'}...`);
+      try {
+        const data = await fetchJson(endpoint, { method: 'POST' });
+        updateLog(`Vacuum response: ${responseText(data.response)}`);
+        syncVacuumControls({ vacuum_on: nextState });
+        await refreshVacuumStatus();
+      } catch (err) {
+        updateLog(`Vacuum update failed: ${err.message || err}`);
+        await refreshVacuumStatus(true);
+      }
+    }
+
+    async function toggleVacuumCheck(source = 'panel') {
+      const inputId = source === 'treat' ? 'treatVacuumCheck' : 'vacuumPanelCheck';
+      const input = document.getElementById(inputId);
+      const nextState = Boolean(input && input.checked);
+
+      updateLog(`Turning vacuum check ${nextState ? 'ON' : 'OFF'}...`);
+      try {
+        const data = await fetchJson(`/vacuum/check?enabled=${nextState}`, { method: 'POST' });
+        updateLog(`Vacuum check response: ${responseText(data.response)}`);
+        syncVacuumControls({ check_vacuum_enabled: nextState });
+        await refreshVacuumStatus();
+      } catch (err) {
+        updateLog(`Vacuum check update failed: ${err.message || err}`);
+        await refreshVacuumStatus(true);
+      }
+    }
+
     setInterval(() => pollAppErrorEvents(false), 1200);
     setInterval(() => pollSequenceEvents(false), 1200);
     setInterval(() => pollTestEvents(false), 1500);
@@ -2097,6 +2249,7 @@
       await refreshDetectionStatus(true);
       updateWavelengthHighlights();
       await syncLaserSettingsInputs(true);
+      await refreshVacuumStatus(true);
       await refreshAppErrors(true);
       await pollAppErrorEvents(true);
       await pollSequenceEvents(true);

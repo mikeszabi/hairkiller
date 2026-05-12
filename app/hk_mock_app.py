@@ -63,6 +63,8 @@ _mover_pos = [3000, 3000]
 _red_dot_enabled = False
 _armed = False
 _laser_active = False
+_vacuum_on = False
+_vacuum_check_on = False
 _channel_power = {"p808": 20, "p980": 25, "p1064": 50}
 _active_channels = {"p808": True, "p980": True, "p1064": True}
 _pulse_ms = 50
@@ -521,6 +523,44 @@ def app_raw_command(payload: RawCommandRequest):
     else:
         response = _ok_arg(name, command[len(name):].strip() or "~")
     return {"command": command, "response": response}
+
+
+@app.post("/vacuum/on")
+def vacuum_on():
+    global _vacuum_on
+    _vacuum_on = True
+    return {"response": _ok_arg("APP_SET_VACUUM_EN", "1")}
+
+
+@app.post("/vacuum/off")
+def vacuum_off():
+    global _vacuum_on
+    _vacuum_on = False
+    return {"response": _ok_arg("APP_SET_VACUUM_EN", "0")}
+
+
+@app.post("/vacuum/check")
+def set_vacuum_check_enabled(enabled: bool = Query(...)):
+    global _vacuum_check_on
+    _vacuum_check_on = bool(enabled)
+    return {"response": _ok_arg("APP_SET_CHECK_VACUUM", _bool_str(_vacuum_check_on))}
+
+
+@app.get("/vacuum/check")
+def get_vacuum_check_enabled():
+    return {"response": _ok("APP_GET_CHECK_VACUUM", _bool_str(_vacuum_check_on)), "enabled": _vacuum_check_on}
+
+
+@app.get("/vacuum/status")
+def get_vacuum_status():
+    return {
+        "vacuum_on": _vacuum_on,
+        "check_vacuum_enabled": _vacuum_check_on,
+        "raw": {
+            "vacuum_on": _ok("APP_GET_VACUUM_EN", _bool_str(_vacuum_on)),
+            "check_vacuum_enabled": _ok("APP_GET_CHECK_VACUUM", _bool_str(_vacuum_check_on)),
+        },
+    }
 
 
 @app.get("/seq/status")

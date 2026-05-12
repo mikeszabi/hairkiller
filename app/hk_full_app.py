@@ -21,6 +21,7 @@ from detection_handler import ObjectDetector
 from detection_utils import remove_overlapping_boxes, get_box_centers
 from galvo_handler import GalvoInterface
 from laser_handler import LaserInterface
+from vacuum_handler import VacuumInterface
 from serial_commands import COMMANDS
 from target_handler import TargetInterface
 from calibration_utils import (
@@ -38,6 +39,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 _galvo = GalvoInterface(debug=False)
 _laser = None  # initialized on startup
 _target = None  # initialized once laser is available
+_vacuum = None  # initialized once laser serial device is available
 
 app = FastAPI(title="hk_full_app")
 
@@ -117,11 +119,13 @@ except Exception as e:
 try:
     _laser = LaserInterface()
     _target = TargetInterface(dev=_laser.dev, channel_provider=_laser.get_channel_power_triplet)
+    _vacuum = VacuumInterface(dev=_laser.dev)
     print("[LASER] Interface initialized", flush=True)
 except Exception as e:
     print(f"[LASER] Failed to initialize: {e}", flush=True)
     _laser = None
     _target = None
+    _vacuum = None
 
 
 def _background_inference_worker():
@@ -703,6 +707,42 @@ def app_raw_command(payload: RawCommandRequest):
     response = _laser.send_raw_command(command)
     _drain_async_messages()
     return {"command": command, "response": response}
+
+
+@app.post("/vacuum/on")
+def vacuum_on():
+    if _vacuum is None:
+        return JSONResponse(status_code=500, content={"error": "Vacuum controller unavailable"})
+    return {"response": _vacuum.vacuum_on()}
+
+
+@app.post("/vacuum/off")
+def vacuum_off():
+    if _vacuum is None:
+        return JSONResponse(status_code=500, content={"error": "Vacuum controller unavailable"})
+    return {"response": _vacuum.vacuum_off()}
+
+
+@app.post("/vacuum/check")
+def set_vacuum_check_enabled(enabled: bool = Query(...)):
+    if _vacuum is None:
+        return JSONResponse(status_code=500, content={"error": "Vacuum controller unavailable"})
+    return {"response": _vacuum.set_check_vacuum(enabled)}
+
+
+@app.get("/vacuum/check")
+def get_vacuum_check_enabled():
+    if _vacuum is None:
+        return JSONResponse(status_code=500, content={"error": "Vacuum controller unavailable"})
+    resp = _vacuum.get_check_vacuum()
+    return {"response": resp, "enabled": _vacuum.parse_bool_response(resp)}
+
+
+@app.get("/vacuum/status")
+def get_vacuum_status():
+    if _vacuum is None:
+        return JSONResponse(status_code=500, content={"error": "Vacuum controller unavailable"})
+    return _vacuum.get_status()
 
 
 @app.get("/seq/status")
