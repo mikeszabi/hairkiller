@@ -1,0 +1,1 @@
+"""HairKiller backend applications."""

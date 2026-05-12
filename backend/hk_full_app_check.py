@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Command-line preflight checklist for hk_full_app.
+"""Command-line preflight checklist for the consolidated backend app.
 
-This script checks the main runtime dependencies used by hk_full_app.py:
+This script checks the main runtime dependencies used by backend/hk_backend_app.py:
 - Python package imports
 - Required local files
 - CUDA/model readiness for YOLO inference
@@ -220,7 +220,7 @@ def check_camera_stream() -> tuple[bool, str]:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Preflight checklist for app/hk_full_app.py")
+    parser = argparse.ArgumentParser(description="Preflight checklist for backend/hk_backend_app.py")
     parser.add_argument("--port", default="/dev/ttyACM0", help="Serial controller port")
     parser.add_argument("--baud", type=int, default=115200, help="Serial baud rate")
     parser.add_argument("--timeout", type=float, default=0.4, help="Serial read timeout in seconds")
@@ -279,9 +279,9 @@ def main() -> int:
     checklist.print_report()
 
     if checklist.exit_code() == 0:
-        print("Ready to start: uvicorn app.hk_full_app:app --reload")
+        print("Ready to start: uvicorn backend.hk_backend_app:app --reload")
     else:
-        print("Not ready: fix the FAIL items before starting hk_full_app.")
+        print("Not ready: fix the FAIL items before starting hk_backend_app.")
 
     return checklist.exit_code()
 
