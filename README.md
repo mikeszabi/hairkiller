@@ -144,34 +144,6 @@ No "Numpy is not available" error.
 
 ---
 
-### � Unified Calibration & Homography Web App
-
-A FastAPI service and HTML interface for full calibration and homography testing workflow:
-
-**Start the server:**
-```bash
-source yolo_venv/bin/activate
-uvicorn app.hk_calibration_app:app --reload
-```
-
-**Open in browser:** `http://localhost:8000`
-
-**API base for external frontends:** `http://localhost:8000/api`
-
-**Serve standalone HTML frontends:**
-```bash
-bash setup_scripts/start_frontends.sh
-```
-
-**Layout:** Camera stream on the left, all controls grouped on the right:
-
-1. **Detection** – toggle red dot detection on live feed; displays detected center
-2. **Direct Galvo Control** – move galvo by coordinate or arrow buttons with adjustable step
-3. **Calibration Collection** – gather image↔galvo point pairs, then click "Calculate & Save Homography" to compute and persist the transformation matrix
-4. **Homography Test** – click anywhere on the video; the app uses the saved homography to transform the image coordinate to galvo coordinate and moves the beam there
-
-After calibration, use the "Reload Homography" button to reload the matrix from disk if you've run a new calibration.
-
 
 ### 🔥 Full Hair Removal Control App (`hk_full_app`)
 
@@ -180,7 +152,7 @@ Complete hair removal system with laser firing, detection, and automated galvo s
 **Start the server:**
 ```bash
 source yolo_venv/bin/activate
-uvicorn app.hk_full_app:app --reload
+uvicorn backend.hk_backend_app:app --reload
 ```
 
 **Open in browser:** `http://localhost:8000`

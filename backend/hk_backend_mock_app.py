@@ -73,6 +73,7 @@ _pulse_ms = 50
 _pending_sync = False
 _sequence_mode = "MANUAL"
 _sequence_state = "IDLE"
+_frame_stride = 2
 _show_target_points_overlay = False
 _targets: dict[int, list[int]] = {}
 _mask_overlay_enabled = False
@@ -317,7 +318,7 @@ def stats():
             "measured_fps": 4.0,
         },
         "settings": _camera_settings,
-        "stream": {"width": STREAM_W, "height": STREAM_H, "window_s": 0.25, "encode_ms_avg": 1.2},
+        "stream": {"width": STREAM_W, "height": STREAM_H, "window_s": 0.25, "frame_stride": _frame_stride, "encode_ms_avg": 1.2},
         "detection_enabled": _detection_enabled,
         "detection_count": _last_detection_count,
         "calibration_detection_enabled": _calibration_detection_enabled,
@@ -380,6 +381,18 @@ def latency_benchmark(samples: int = Query(default=20, ge=5, le=200)):
         "settings": _camera_settings,
         "mock": True,
     }
+
+
+@app.get("/camera/frame_stride")
+def get_camera_frame_stride():
+    return {"frame_stride": _frame_stride}
+
+
+@app.post("/camera/frame_stride")
+def set_camera_frame_stride(value: int = Query(..., ge=1, le=60)):
+    global _frame_stride
+    _frame_stride = int(value)
+    return {"frame_stride": _frame_stride}
 
 
 @app.get("/sse/detection")

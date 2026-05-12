@@ -15,7 +15,7 @@ os.environ["OPENCV_LOG_LEVEL"] = "SILENT"
 
 DEV = "/dev/v4l/by-id/usb-Arducam_Technology_Co.__Ltd._Arducam_16MP_SN0001-video-index0"
 
-W, H, FPS = 2592, 1944, 5
+W, H, FPS = 2592, 1944, 10
 FOURCC = "MJPG"
 
 # Exposure time in 100µs units (V4L2 exposure_time_absolute).

@@ -31,7 +31,11 @@ All API routes are available both at their direct path and under `/api/...`. The
 - `GET /frame/snapshot`
 - `GET /camera/settings`
 - `POST /camera/settings`
+- `GET /camera/frame_stride`
+- `POST /camera/frame_stride?value=2`
 - `POST /latency/benchmark`
+
+`frame_stride` controls backend frame downsampling. The default is `2`, so a camera negotiated at 10 FPS is streamed and processed at about 5 FPS. The backend applies this same stride to live frontend streaming, background YOLO `split_inference`, and calibration red-dot detection.
 
 ## Full Application Workflow
 

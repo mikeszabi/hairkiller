@@ -13,8 +13,13 @@ import logging
 import json
 import numpy as np
 import re
-from turbojpeg import TurboJPEG
+import os
 from pydantic import BaseModel
+
+try:
+    from turbojpeg import TurboJPEG
+except ModuleNotFoundError:
+    TurboJPEG = None
 
 from camera_handler import UVCInterface
 from detection_handler import ObjectDetector
@@ -39,12 +44,20 @@ ROOT = Path(__file__).resolve().parent.parent
 APP_DIR = ROOT / "app"
 
 # ==================== FastAPI App ====================
-_galvo = GalvoInterface(debug=False)
+_galvo = None
+_galvo_error = None
+try:
+    _galvo = GalvoInterface(debug=False)
+    print("[GALVO] Interface initialized", flush=True)
+except Exception as e:
+    _galvo_error = str(e)
+    print(f"[GALVO] Failed to initialize: {e}", flush=True)
+
 _laser = None  # initialized on startup
 _target = None  # initialized once laser is available
 _vacuum = None  # initialized once laser serial device is available
 
-app = FastAPI(title="hk_full_app")
+app = FastAPI(title="hk_backend_app")
 install_api_prefix(app)
 
 app.add_middleware(
@@ -56,7 +69,14 @@ app.add_middleware(
 )
 
 # Global state
-_uvc = UVCInterface()
+_uvc = None
+_camera_error = None
+try:
+    _uvc = UVCInterface()
+    print("[CAMERA] Interface initialized", flush=True)
+except Exception as e:
+    _camera_error = str(e)
+    print(f"[CAMERA] Failed to initialize: {e}", flush=True)
 _hair_detection_enabled = False
 _detected_points = []
 _homography = None
@@ -65,9 +85,10 @@ _detection_conf = 0.1
 _current_target_image_pt = None
 _show_target_points_overlay = False
 _last_detection_count = 0
-_cam_frame_window = 0.25 # sec
+_cam_frame_window = 0.0 # sec; frame rate is primarily controlled by _frame_stride
+_frame_stride = max(1, int(os.getenv("HK_FRAME_STRIDE", "2")))
 _stream_w, _stream_h = 960, 960  # stream output resolution (native is 1920x1920)
-_turbo = TurboJPEG()
+_turbo = TurboJPEG() if TurboJPEG is not None else None
 _max_sequence_targets = 50
 
 # App state
@@ -123,6 +144,55 @@ def _sequence_target_image_points():
     ]
 
 
+def _encode_jpeg(frame, quality: int = 70) -> bytes:
+    if _turbo is not None:
+        return _turbo.encode(frame, quality=quality)
+
+    ok, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
+    if not ok:
+        raise RuntimeError("JPEG encoding failed")
+    return jpeg.tobytes()
+
+
+def _camera_ready() -> bool:
+    return _uvc is not None
+
+
+def _camera_unavailable_response():
+    return JSONResponse(
+        status_code=503,
+        content={"ok": False, "camera_ready": False, "error": _camera_error or "Camera unavailable"},
+    )
+
+
+def _frame_stride_value() -> int:
+    return max(1, int(_frame_stride))
+
+
+def _is_stride_frame(frame_idx) -> bool:
+    if frame_idx is None:
+        return False
+    return int(frame_idx) % _frame_stride_value() == 0
+
+
+def _read_strided_frame(timeout_s: float = 1.0):
+    """Return the latest frame whose camera index matches the configured stride."""
+    if _uvc is None:
+        return None, None
+
+    deadline = time.perf_counter() + timeout_s
+    while time.perf_counter() < deadline:
+        frame, idx = _uvc.read()
+        if frame is None:
+            time.sleep(0.005)
+            continue
+        if _is_stride_frame(idx):
+            return frame, idx
+        time.sleep(0.001)
+
+    return None, None
+
+
 def _clamp_hsv_value(value: int, channel: str) -> int:
     upper = 180 if channel == "h" else 255
     return max(0, min(upper, int(value)))
@@ -164,6 +234,9 @@ def _benchmark_latency(samples: int) -> dict:
     total_ms = []
     last_idx = None
 
+    if _uvc is None:
+        return {"ok": False, "error": _camera_error or "Camera unavailable"}
+
     while len(total_ms) < samples:
         start = time.perf_counter()
         frame, idx, captured_ts = _uvc.read_with_meta()
@@ -173,7 +246,7 @@ def _benchmark_latency(samples: int) -> dict:
 
         after_read = time.perf_counter()
         t0 = time.perf_counter()
-        _ = _turbo.encode(frame, quality=75)
+        _ = _encode_jpeg(frame, quality=75)
         after_encode = time.perf_counter()
 
         read_wait_ms.append((after_read - start) * 1000.0)
@@ -228,17 +301,22 @@ except Exception as e:
 def _background_inference_worker():
     """Background thread that continuously runs YOLO inference and updates cache."""
     global _inference_cache
+    last_processed_idx = -1
     print("[INFERENCE THREAD] Started", flush=True)
     
     while True:
         if not _hair_detection_enabled or _detector is None:
             time.sleep(0.1)
             continue
+        if _uvc is None:
+            time.sleep(0.25)
+            continue
         
-        frame, _ = _uvc.read()
-        if frame is None:
+        frame, idx = _uvc.read()
+        if frame is None or idx == last_processed_idx or not _is_stride_frame(idx):
             time.sleep(0.01)
             continue
+        last_processed_idx = idx
         
         try:
             boxes_with_scores = _detector.split_inference(frame, conf=_detection_conf)
@@ -425,8 +503,11 @@ def _generate_camera():
     last_sent_idx = -1
     
     while True:
+        if _uvc is None:
+            time.sleep(0.25)
+            continue
         frame, idx = _uvc.read()
-        if frame is None or idx == last_sent_idx:
+        if frame is None or idx == last_sent_idx or not _is_stride_frame(idx):
             time.sleep(0.01)
             continue
         last_sent_idx = idx
@@ -491,7 +572,7 @@ def _generate_camera():
         
         small = cv2.resize(frame, (_stream_w, _stream_h))
         encode_start = time.perf_counter()
-        buf = _turbo.encode(small, quality=70)
+        buf = _encode_jpeg(small, quality=70)
         _update_stream_stats(last_sent_idx, (time.perf_counter() - encode_start) * 1000.0, None)
         yield b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + buf + b'\r\n'
         time.sleep(_cam_frame_window)
@@ -505,14 +586,18 @@ def root():
 # ==================== Diagnostics ====================
 @app.get("/health")
 def health():
-    frame, idx, captured_ts = _uvc.read_with_meta()
+    frame, idx, captured_ts = (None, None, None)
+    if _uvc is not None:
+        frame, idx, captured_ts = _uvc.read_with_meta()
     ok = frame is not None
     return {
-        "ok": ok,
+        "ok": ok and _galvo is not None,
         "camera_ready": ok,
+        "camera_error": _camera_error,
         "laser_ready": _laser is not None,
         "target_ready": _target is not None,
         "galvo_ready": _galvo is not None,
+        "galvo_error": _galvo_error,
         "detector_ready": _detector is not None,
         "homography_loaded": _homography is not None,
         "last_frame_index": idx,
@@ -522,6 +607,8 @@ def health():
 
 @app.get("/frame/meta")
 def frame_meta():
+    if _uvc is None:
+        return _camera_unavailable_response()
     frame, idx, captured_ts = _uvc.read_with_meta()
     if frame is None:
         return JSONResponse(status_code=503, content={"ok": False, "error": "No frame available"})
@@ -540,14 +627,17 @@ def frame_meta():
 
 @app.get("/stats")
 def stats():
+    camera_stats = {} if _uvc is None else _uvc.get_stats()
+    camera_settings = {} if _uvc is None else _uvc.get_settings()
     return {
-        "ok": True,
-        "camera": _uvc.get_stats(),
-        "settings": _uvc.get_settings(),
+        "ok": _uvc is not None,
+        "camera": camera_stats,
+        "settings": camera_settings,
         "stream": {
             "width": _stream_w,
             "height": _stream_h,
             "window_s": _cam_frame_window,
+            "frame_stride": _frame_stride_value(),
             **_stream_stats,
         },
         "detection_enabled": _hair_detection_enabled,
@@ -565,21 +655,27 @@ def stats():
 # ==================== Video Stream ====================
 @app.get("/frame/current")
 def stream_video():
+    if _uvc is None:
+        return _camera_unavailable_response()
     return StreamingResponse(_generate_camera(),
                              media_type="multipart/x-mixed-replace; boundary=frame")
 
 
 @app.get("/frame/snapshot")
 def frame_snapshot():
+    if _uvc is None:
+        return _camera_unavailable_response()
     frame, _, _ = _uvc.read_with_meta()
     if frame is None:
         return JSONResponse(status_code=503, content={"ok": False, "error": "No frame available"})
-    buf = _turbo.encode(frame, quality=90)
+    buf = _encode_jpeg(frame, quality=90)
     return StreamingResponse(iter([buf]), media_type="image/jpeg")
 
 
 @app.get("/camera/settings")
 def get_camera_settings():
+    if _uvc is None:
+        return _camera_unavailable_response()
     return {"ok": True, "settings": _uvc.get_settings()}
 
 
@@ -591,6 +687,8 @@ def set_camera_settings(
     white_balance: int | None = Query(default=None, ge=2000, le=10000),
     fps: float | None = Query(default=None, ge=1, le=120),
 ):
+    if _uvc is None:
+        return _camera_unavailable_response()
     try:
         settings = _uvc.apply_settings(
             auto_exposure=auto_exposure,
@@ -606,7 +704,21 @@ def set_camera_settings(
 
 @app.post("/latency/benchmark")
 def latency_benchmark(samples: int = Query(default=20, ge=5, le=200)):
+    if _uvc is None:
+        return _camera_unavailable_response()
     return _benchmark_latency(samples)
+
+
+@app.get("/camera/frame_stride")
+def get_camera_frame_stride():
+    return {"frame_stride": _frame_stride_value()}
+
+
+@app.post("/camera/frame_stride")
+def set_camera_frame_stride(value: int = Query(..., ge=1, le=60)):
+    global _frame_stride
+    _frame_stride = int(value)
+    return {"frame_stride": _frame_stride_value()}
 
 
 # ==================== SSE for Detection Count ====================
@@ -1085,17 +1197,21 @@ def set_detection_hsv(
 
 @app.get("/dot")
 def read_dot():
-    frame, _ = _uvc.read()
+    if _uvc is None:
+        return {"x": None, "y": None, "error": _camera_error or "Camera unavailable"}
+    frame, idx = _read_strided_frame()
     if frame is None:
         return {"x": None, "y": None}
     _, center = _detect_red_dot_with_current_hsv(frame)
     if center is None:
-        return {"x": None, "y": None}
-    return {"x": int(center[0]), "y": int(center[1])}
+        return {"x": None, "y": None, "frame_index": idx}
+    return {"x": int(center[0]), "y": int(center[1]), "frame_index": idx}
 
 
 @app.get("/frame/hsv")
 def read_frame_hsv(x: int = Query(...), y: int = Query(...)):
+    if _uvc is None:
+        return _camera_unavailable_response()
     frame, _ = _uvc.read()
     if frame is None:
         return JSONResponse(status_code=503, content={"error": "No frame available"})
@@ -1117,17 +1233,20 @@ def sse_dot():
     def event_stream():
         last_x, last_y = None, None
         while True:
-            frame, _ = _uvc.read()
+            if _uvc is None:
+                time.sleep(0.5)
+                continue
+            frame, idx = _read_strided_frame()
             if frame is not None:
                 _, center = _detect_red_dot_with_current_hsv(frame)
                 if center is not None:
                     x, y = int(center[0]), int(center[1])
                     if x != last_x or y != last_y:
                         last_x, last_y = x, y
-                        yield f"data: {json.dumps({'x': x, 'y': y})}\n\n"
+                        yield f"data: {json.dumps({'x': x, 'y': y, 'frame_index': idx})}\n\n"
                 elif last_x is not None or last_y is not None:
                     last_x, last_y = None, None
-                    yield f"data: {json.dumps({'x': None, 'y': None})}\n\n"
+                    yield f"data: {json.dumps({'x': None, 'y': None, 'frame_index': idx})}\n\n"
             time.sleep(0.5)
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
@@ -1150,8 +1269,10 @@ def capture_detections():
     global _detected_points
     if _detector is None:
         return JSONResponse(status_code=500, content={"error": "Detector unavailable"})
+    if _uvc is None:
+        return _camera_unavailable_response()
     
-    frame, _ = _uvc.read()
+    frame, idx = _read_strided_frame()
     if frame is None:
         return JSONResponse(status_code=500, content={"error": "Could not read frame"})
     
@@ -1165,7 +1286,7 @@ def capture_detections():
         _detected_points = [(int(cx), int(cy)) for cx, cy in centers]
         #print(f"[CAPTURE] Detected points: {_detected_points}", flush=True)
         
-        return {"captured": len(_detected_points), "points": _detected_points}
+        return {"captured": len(_detected_points), "points": _detected_points, "frame_index": idx}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
@@ -1245,14 +1366,16 @@ def start_calibration():
 
 @app.post("/calibration/store")
 def store_calibration_point():
-    frame, _ = _uvc.read()
+    if _uvc is None:
+        return {"stored": len(_calibration_points), "error": _camera_error or "Camera unavailable"}
+    frame, idx = _read_strided_frame()
     position = _galvo.get_position() if _galvo is not None else (None, None)
     center = None
     if frame is not None:
         _, center = _detect_red_dot_with_current_hsv(frame)
     if center is not None and position is not None:
         _calibration_points.append(((int(center[0]), int(center[1])), (position[0], position[1])))
-    return {"stored": len(_calibration_points)}
+    return {"stored": len(_calibration_points), "frame_index": idx}
 
 
 @app.get("/calibration/points")
