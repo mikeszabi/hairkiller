@@ -17,6 +17,7 @@ from camera_handler import UVCInterface
 from detection_utils import detect_red_dot
 from galvo_handler import GalvoInterface
 from laser_handler import LaserInterface
+from api_prefix import install_api_prefix
 from calibration_utils import (
     calculate_homography,
     save_transformation_to_file,
@@ -34,6 +35,7 @@ except Exception as e:
     _laser = None
 
 app = FastAPI(title="hk_calibration_app")
+install_api_prefix(app)
 
 # allow CORS from anywhere for ease of local development
 app.add_middleware(

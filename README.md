@@ -154,7 +154,14 @@ source yolo_venv/bin/activate
 uvicorn app.hk_calibration_app:app --reload
 ```
 
-**Open in browser:** `http://localhost:8000` → `app/hk_calibration_app.html`
+**Open in browser:** `http://localhost:8000`
+
+**API base for external frontends:** `http://localhost:8000/api`
+
+**Serve standalone HTML frontends:**
+```bash
+bash setup_scripts/start_frontends.sh
+```
 
 **Layout:** Camera stream on the left, all controls grouped on the right:
 
@@ -176,7 +183,14 @@ source yolo_venv/bin/activate
 uvicorn app.hk_full_app:app --reload
 ```
 
-**Open in browser:** `http://localhost:8000` → `app/hk_full_app.html`
+**Open in browser:** `http://localhost:8000`
+
+**API base for external frontends:** `http://localhost:8000/api`
+
+**Serve standalone HTML frontends:**
+```bash
+bash setup_scripts/start_frontends.sh
+```
 
 **Features:**
 

@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hairkiller Frontends</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: sans-serif;
+      background: linear-gradient(180deg, #161616 0%, #222 100%);
+      color: #eee;
+      padding: 24px;
+    }
+    .wrap {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    h1 {
+      margin: 0 0 12px 0;
+      color: #8cff8c;
+      font-size: 32px;
+    }
+    .lead {
+      margin: 0 0 20px 0;
+      color: #c9c9c9;
+      line-height: 1.5;
+    }
+    .panel {
+      background: #2a2a2a;
+      border: 1px solid #4c4c4c;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 18px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
+    }
+    .label {
+      display: block;
+      margin-bottom: 8px;
+      color: #8cff8c;
+      font-weight: bold;
+    }
+    input[type=text] {
+      width: 100%;
+      padding: 10px 12px;
+      font-size: 14px;
+      background: #151515;
+      color: #eee;
+      border: 1px solid #555;
+      border-radius: 8px;
+    }
+    .hint {
+      margin-top: 8px;
+      font-size: 13px;
+      color: #aaa;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+    }
+    .card {
+      display: block;
+      text-decoration: none;
+      color: inherit;
+      background: #202020;
+      border: 1px solid #444;
+      border-radius: 10px;
+      padding: 16px;
+      transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+    }
+    .card:hover {
+      transform: translateY(-2px);
+      border-color: #69b869;
+      background: #252525;
+    }
+    .card-title {
+      margin: 0 0 8px 0;
+      color: #8cff8c;
+      font-size: 18px;
+      font-weight: bold;
+    }
+    .card-file {
+      margin: 0 0 8px 0;
+      color: #ffd27a;
+      font-family: monospace;
+      font-size: 12px;
+    }
+    .card-desc {
+      margin: 0;
+      color: #d6d6d6;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+    .footer {
+      margin-top: 16px;
+      font-size: 13px;
+      color: #aaa;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Hairkiller Frontends</h1>
+    <p class="lead">
+      Pick a frontend below. The links automatically include the selected backend API base so the pages work when this folder is served separately from FastAPI.
+    </p>
+
+    <div class="panel">
+      <label class="label" for="apiBase">Backend API base</label>
+      <input id="apiBase" type="text" value="" placeholder="http://localhost:8000/api" />
+      <div class="hint">
+        This value is passed to each frontend as the <code>?api=...</code> query parameter.
+      </div>
+    </div>
+
+    <div class="grid" id="frontendGrid"></div>
+
+    <div class="footer">
+      If you are opening this page from another device, use the backend machine's real IP instead of <code>localhost</code>.
+    </div>
+  </div>
+
+  <script>
+    const frontends = [
+      {
+        file: "hk_full_app.html",
+        title: "Full App",
+        desc: "Desktop-oriented full treatment UI."
+      },
+      {
+        file: "hk_full_app_portrait.html",
+        title: "Full App Portrait",
+        desc: "Portrait-oriented full treatment UI."
+      },
+      {
+        file: "hk_calibration_app.html",
+        title: "Calibration App",
+        desc: "Desktop-oriented calibration and homography UI."
+      },
+      {
+        file: "hk_calibration_app_portrait.html",
+        title: "Calibration Portrait",
+        desc: "Portrait-oriented calibration and homography UI."
+      },
+      {
+        file: "hk_camera_test.html",
+        title: "Camera Test",
+        desc: "Camera diagnostics, stream, and settings page."
+      }
+    ];
+
+    function inferApiBase() {
+      const params = new URLSearchParams(window.location.search);
+      const explicit = params.get("api");
+      if (explicit) return explicit.replace(/\/+$/, "");
+      return "http://localhost:8000/api";
+    }
+
+    function buildHref(filename, apiBase) {
+      const url = new URL(filename, window.location.href);
+      url.searchParams.set("api", apiBase.replace(/\/+$/, ""));
+      return url.toString();
+    }
+
+    function renderLinks() {
+      const apiBase = document.getElementById("apiBase").value.trim() || inferApiBase();
+      const grid = document.getElementById("frontendGrid");
+      grid.innerHTML = frontends.map((frontend) => `
+        <a class="card" href="${buildHref(frontend.file, apiBase)}">
+          <div class="card-title">${frontend.title}</div>
+          <div class="card-file">${frontend.file}</div>
+          <p class="card-desc">${frontend.desc}</p>
+        </a>
+      `).join("");
+    }
+
+    document.getElementById("apiBase").value = inferApiBase();
+    document.getElementById("apiBase").addEventListener("input", renderLinks);
+    renderLinks();
+  </script>
+</body>
+</html>

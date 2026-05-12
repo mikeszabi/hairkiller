@@ -11,9 +11,11 @@ sys.path.append(str(Path(__file__).parent.parent))
 sys.path.append(str(Path(__file__).parent.parent / "code"))
 
 from camera_handler import UVCInterface
+from api_prefix import install_api_prefix
 
 
 app = FastAPI(title="hk_camera_test_backend")
+install_api_prefix(app)
 
 app.add_middleware(
     CORSMiddleware,

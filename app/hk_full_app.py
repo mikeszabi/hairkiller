@@ -24,6 +24,7 @@ from laser_handler import LaserInterface
 from vacuum_handler import VacuumInterface
 from serial_commands import COMMANDS
 from target_handler import TargetInterface
+from api_prefix import install_api_prefix
 from calibration_utils import (
     read_transformation_from_file,
     transform_to_mover_coordinates,
@@ -42,6 +43,7 @@ _target = None  # initialized once laser is available
 _vacuum = None  # initialized once laser serial device is available
 
 app = FastAPI(title="hk_full_app")
+install_api_prefix(app)
 
 app.add_middleware(
     CORSMiddleware,

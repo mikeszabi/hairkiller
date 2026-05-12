@@ -235,7 +235,7 @@
         <div class="toolbar">
           <label>
             Backend URL
-            <input id="apiBase" value="http://127.0.0.1:8000" />
+            <input id="apiBase" value="" placeholder="auto: same-origin /api" />
           </label>
           <button id="connectBtn" type="button">Connect Stream</button>
           <button id="refreshBtn" type="button">Refresh Stream</button>
@@ -360,8 +360,19 @@
   <script>
     const $ = (id) => document.getElementById(id);
 
+    function inferredApiBase() {
+      const params = new URLSearchParams(window.location.search);
+      const override = window.HK_API_BASE || params.get("api");
+      if (override) return override.replace(/\/+$/, "");
+      if (window.location.origin && window.location.origin !== "null" && /^https?:/i.test(window.location.origin)) {
+        return `${window.location.origin}/api`;
+      }
+      return "http://127.0.0.1:8000/api";
+    }
+
     function baseUrl() {
-      return $("apiBase").value.replace(/\/+$/, "");
+      const manual = $("apiBase").value.trim();
+      return (manual || inferredApiBase()).replace(/\/+$/, "");
     }
 
     function setStatus(message, mode = "") {
@@ -443,6 +454,8 @@
       updateJson({ meta, stats, health });
       setStatus("Stats updated", "ok");
     }
+
+    $("apiBase").value = inferredApiBase();
 
     async function runBenchmark() {
       const samples = $("benchmarkSamples").value;

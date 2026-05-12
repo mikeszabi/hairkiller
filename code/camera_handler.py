@@ -22,7 +22,8 @@ FOURCC = "MJPG"
 # 100 = 10ms (bright light)  |  333 = 33ms (1/30s, normal indoor)
 # 500 = 50ms (dim indoor)    |  1000 = 100ms (max at 10 FPS)
 # Increase if the image is too dark, decrease if too bright.
-EXPOSURE = 1000
+EXPOSURE = 100
+WHITE_BALANCE = 3000
 
 MAX_FAILS = 10          # ennyi egymás utáni read fail után restart
 BACKOFF = 1.0           # restart előtt várakozás
@@ -44,10 +45,10 @@ def open_cam(
     height: int = H,
     fps: int = FPS,
     fourcc: str = FOURCC,
-    auto_exposure: bool = True,
-    exposure: int | None = None,
-    auto_wb: bool = True,
-    white_balance: int | None = None,
+    auto_exposure: bool = False,
+    exposure: int | None = EXPOSURE,
+    auto_wb: bool = False,
+    white_balance: int | None = WHITE_BALANCE,
 ):
     cap = cv2.VideoCapture(dev, cv2.CAP_V4L2)
     if not cap.isOpened():
@@ -116,10 +117,10 @@ class UVCInterface:
         height: int = H,
         fps: int = FPS,
         fourcc: str = FOURCC,
-        auto_exposure: bool = True,
-        exposure: int | None = None,
-        auto_wb: bool = True,
-        white_balance: int | None = None,
+        auto_exposure: bool = False,
+        exposure: int | None = EXPOSURE,
+        auto_wb: bool = False,
+        white_balance: int | None = WHITE_BALANCE,
     ) -> None:
         # store user-provided/default parameters
 

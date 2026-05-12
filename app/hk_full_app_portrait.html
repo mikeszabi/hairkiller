@@ -2,44 +2,47 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>HK Full Hair Removal App</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>HK Full Hair Removal App - Portrait</title>
   <style>
     * { box-sizing: border-box; }
-    body { 
-      font-family: sans-serif; 
-      background: #222; 
-      color: #eee; 
-      padding: 10px; 
+    body {
+      font-family: sans-serif;
+      background: #222;
+      color: #eee;
+      padding: 5px;
       margin: 0;
-      font-size: 13px;
+      font-size: 12px;
+      overflow-x: hidden;
     }
-    h1 { color: #0f0; margin: 0 0 10px 0; font-size: 20px; }
-    h2 { 
-      color: #0f0; 
-      font-size: 12px; 
-      margin: 10px 0 6px 0; 
-      border-bottom: 1px solid #0f0; 
-      padding-bottom: 3px; 
+    h1 {
+      color: #0f0;
+      margin: 0 0 8px 0;
+      font-size: 18px;
+      text-align: center;
     }
-    
+
     #container {
       display: flex;
-      gap: 10px;
-      height: 100vh;
+      flex-direction: column;
+      gap: 8px;
+      height: calc(100vh - 30px);
     }
-    
-    #left {
-      flex: 0 0 55%;
+
+    #video-section {
+      flex: 0 0 45%;
       display: flex;
       flex-direction: column;
     }
-    
-    #right {
+
+    #controls-section {
       flex: 1;
       overflow-y: auto;
-      padding-right: 8px;
+      padding: 4px;
+      background: #2a2a2a;
+      border-radius: 4px;
     }
-    
+
     #video-container {
       flex: 1;
       position: relative;
@@ -48,6 +51,8 @@
       justify-content: center;
       border: 2px solid #0f0;
       background: #000;
+      border-radius: 4px;
+      overflow: hidden;
     }
     #crosshair {
       position: absolute;
@@ -61,74 +66,75 @@
       background: #f00;
     }
     #crosshair:before {
-      left: -20px; top: 0;
-      width: 40px; height: 2px;
+      left: -15px; top: 0;
+      width: 30px; height: 2px;
     }
     #crosshair:after {
-      top: -20px; left: 0;
-      width: 2px; height: 40px;
+      top: -15px; left: 0;
+      width: 2px; height: 30px;
     }
-    
-    img { 
-      max-width: 100%; 
-      max-height: 100%; 
+
+    img {
+      max-width: 100%;
+      max-height: 100%;
       display: block;
+      object-fit: contain;
     }
-    
-    .panel { 
-      margin-bottom: 12px; 
-      padding: 8px; 
-      background: #333; 
+
+    .panel {
+      margin-bottom: 8px;
+      padding: 6px;
+      background: #333;
       border: 1px solid #555;
       border-radius: 3px;
     }
-    
-    button, input[type=number], input[type=checkbox], input[type=range], label { 
-      margin: 2px 1px; 
-      padding: 4px 8px; 
-      font-size: 12px; 
+
+    button, input[type=number], input[type=checkbox], input[type=range], label {
+      margin: 2px 1px;
+      padding: 4px 6px;
+      font-size: 11px;
       background: #444;
       color: #eee;
       border: 1px solid #666;
       border-radius: 2px;
       cursor: pointer;
     }
-    
+
     button:hover { background: #555; }
     button:active { background: #666; }
     button:disabled { background: #666; opacity: 0.5; cursor: not-allowed; }
-    
+
     input[type=checkbox] { cursor: pointer; width: auto; }
-    input[type=range] { width: 60px; vertical-align: middle; }
-    input[type=number] { width: 60px; padding: 3px; }
+    input[type=range] { width: 50px; vertical-align: middle; }
+    input[type=number] { width: 50px; padding: 3px; }
     input[type=text] { width: 100%; padding: 4px 6px; }
-    
+
     .info-line {
       margin: 3px 0;
-      font-size: 11px;
+      font-size: 10px;
       padding: 3px 4px;
       background: #222;
       border-radius: 2px;
     }
-    
+
     .info-label { font-weight: bold; color: #0f0; }
-    
-    .small-btn { padding: 3px 6px; font-size: 11px; }
-    
+
+    .small-btn { padding: 3px 5px; font-size: 10px; }
+
     .danger-btn { background: #8b0000; }
     .danger-btn:hover { background: #a00000; }
-    .emph-btn { font-weight: bold; font-size: 14px; }
+    .emph-btn { font-weight: bold; font-size: 12px; }
     .wavelength-row {
       display: flex;
-      gap: 8px;
+      gap: 6px;
       align-items: stretch;
       flex-wrap: wrap;
-      margin-top: 6px;
+      margin-top: 4px;
     }
     .wavelength-card {
-      flex: 1 1 120px;
-      min-width: 120px;
-      padding: 6px;
+      flex: 1 1 100px;
+      min-width: 100px;
+      padding: 4px;
       border: 1px solid #666;
       border-radius: 4px;
       background: #2a2a2a;
@@ -142,7 +148,7 @@
     .wavelength-card label {
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: 3px;
       margin: 0;
       padding: 0;
       background: transparent;
@@ -151,90 +157,91 @@
     .wavelength-card input[type=number] {
       width: 100%;
     }
-    
+
     .success-btn { background: #006600; }
     .success-btn:hover { background: #009900; }
-    
+
     .warning-btn { background: #aa6600; }
     .warning-btn:hover { background: #bb7700; }
-    
+
     .points-list {
-      max-height: 120px;
+      max-height: 100px;
       overflow-y: auto;
       background: #222;
       border: 1px solid #555;
       border-radius: 2px;
       padding: 4px;
       margin: 4px 0;
-      font-size: 10px;
+      font-size: 9px;
       font-family: monospace;
     }
-    
-    .point-entry { 
+
+    .point-entry {
       padding: 1px 2px;
       margin: 1px 0;
       background: #333;
       border-radius: 1px;
     }
-    
+
     .status-badge {
       display: inline-block;
-      padding: 2px 4px;
+      padding: 1px 3px;
       border-radius: 2px;
-      font-size: 10px;
+      font-size: 9px;
       font-weight: bold;
       margin-left: 4px;
     }
-    
+
     .status-idle { background: #888; }
     .status-active { background: #00aa00; color: #000; }
     .status-error { background: #aa0000; }
-    
+
     .grid-2 {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 4px;
-      margin: 4px 0;
-    }
-    
-    .grid-3 {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
       gap: 3px;
       margin: 3px 0;
     }
-    
-    #right::-webkit-scrollbar {
-      width: 6px;
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 2px;
+      margin: 2px 0;
     }
-    #right::-webkit-scrollbar-track {
+
+    #controls-section::-webkit-scrollbar {
+      width: 5px;
+    }
+    #controls-section::-webkit-scrollbar-track {
       background: #222;
     }
-    #right::-webkit-scrollbar-thumb {
+    #controls-section::-webkit-scrollbar-thumb {
       background: #666;
       border-radius: 3px;
     }
-    #right::-webkit-scrollbar-thumb:hover {
+    #controls-section::-webkit-scrollbar-thumb:hover {
       background: #888;
     }
-    
+
     .laser-status { color: #ff4444; font-weight: bold; }
+
     .laser-armed { color: #44ff44; font-weight: bold; }
-    
+
     textarea {
       width: 100%;
-      height: 60px;
+      height: 50px;
       background: #222;
       color: #0f0;
       border: 1px solid #555;
       font-family: monospace;
-      font-size: 10px;
+      font-size: 9px;
       padding: 4px;
       resize: vertical;
     }
 
     .section {
-      margin-bottom: 12px;
+      margin-bottom: 8px;
       border: 1px solid #555;
       border-radius: 4px;
       overflow: hidden;
@@ -251,12 +258,12 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 8px 10px;
+      padding: 6px 8px;
       background: #2a2a2a;
       border: none;
       border-bottom: 1px solid #444;
       color: #0f0;
-      font-size: 12px;
+      font-size: 11px;
       font-weight: bold;
       cursor: pointer;
     }
@@ -268,12 +275,12 @@
     .section-title {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 4px;
     }
 
     .section-chevron {
       color: #aaa;
-      font-size: 11px;
+      font-size: 10px;
       transition: transform 0.15s ease;
     }
 
@@ -282,7 +289,7 @@
     }
 
     .section-body {
-      padding: 8px;
+      padding: 6px;
     }
 
     .section.collapsed .section-body {
@@ -292,8 +299,8 @@
     .status-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 4px;
-      margin: 6px 0;
+      gap: 3px;
+      margin: 4px 0;
     }
 
     .mono {
@@ -303,8 +310,8 @@
     .sensor-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 4px;
-      margin-top: 6px;
+      gap: 3px;
+      margin-top: 4px;
     }
 
     .error-panel {
@@ -316,15 +323,15 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 8px;
-      margin-bottom: 6px;
+      gap: 6px;
+      margin-bottom: 4px;
     }
 
     .error-badge {
       display: inline-block;
-      padding: 2px 6px;
+      padding: 1px 4px;
       border-radius: 999px;
-      font-size: 10px;
+      font-size: 9px;
       font-weight: bold;
       color: #fff;
       background: #666;
@@ -335,22 +342,22 @@
     }
 
     .error-list {
-      max-height: 140px;
+      max-height: 120px;
       overflow-y: auto;
       background: #181111;
       border: 1px solid #5b3030;
       border-radius: 2px;
       padding: 4px;
-      margin-top: 6px;
-      font-size: 10px;
+      margin-top: 4px;
+      font-size: 9px;
       font-family: monospace;
     }
 
     .error-entry {
-      padding: 4px;
-      margin-bottom: 4px;
+      padding: 3px;
+      margin-bottom: 3px;
       background: #352020;
-      border-left: 3px solid #aa0000;
+      border-left: 2px solid #aa0000;
       border-radius: 2px;
       white-space: pre-wrap;
       word-break: break-word;
@@ -362,9 +369,9 @@
 
     .seq-badge {
       display: inline-block;
-      padding: 2px 6px;
+      padding: 1px 4px;
       border-radius: 999px;
-      font-size: 10px;
+      font-size: 9px;
       font-weight: bold;
       color: #fff;
       background: #666;
@@ -385,34 +392,34 @@
 
     .test-result {
       width: 100%;
-      height: 120px;
+      height: 100px;
       background: #172224;
       color: #bffcff;
       border: 1px solid #426b70;
       font-family: monospace;
-      font-size: 10px;
-      padding: 6px;
+      font-size: 9px;
+      padding: 4px;
       resize: vertical;
-      margin-top: 6px;
+      margin-top: 4px;
     }
 
     .test-event-list {
-      max-height: 120px;
+      max-height: 100px;
       overflow-y: auto;
       background: #162022;
       border: 1px solid #35565b;
       border-radius: 2px;
       padding: 4px;
-      margin-top: 6px;
-      font-size: 10px;
+      margin-top: 4px;
+      font-size: 9px;
       font-family: monospace;
     }
 
     .test-event-entry {
-      padding: 4px;
-      margin-bottom: 4px;
+      padding: 3px;
+      margin-bottom: 3px;
       background: #223539;
-      border-left: 3px solid #2aa7b6;
+      border-left: 2px solid #2aa7b6;
       border-radius: 2px;
       white-space: pre-wrap;
       word-break: break-word;
@@ -426,9 +433,9 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 8px;
-      margin: 4px 0;
-      padding: 6px;
+      gap: 6px;
+      margin: 3px 0;
+      padding: 4px;
       background: #242424;
       border: 1px solid #4c4c4c;
       border-radius: 3px;
@@ -437,7 +444,7 @@
     .control-row label {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       flex: 1;
       min-width: 0;
       margin: 0;
@@ -449,21 +456,54 @@
     .control-row input[type=checkbox] {
       flex: 0 0 auto;
     }
+
+    /* Portrait-specific optimizations */
+    @media (orientation: portrait) {
+      #container {
+        height: calc(100vh - 25px);
+      }
+
+      #video-section {
+        flex: 0 0 40%;
+      }
+
+      .wavelength-row {
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .wavelength-card {
+        flex: 1 1 auto;
+        min-width: auto;
+      }
+
+      .grid-2, .grid-3 {
+        gap: 2px;
+      }
+
+      .section-body {
+        padding: 4px;
+      }
+
+      .panel {
+        padding: 4px;
+        margin-bottom: 6px;
+      }
+    }
   </style>
 </head>
 <body>
-  <h1>🔴 Hair Removal System - Full Control</h1>
-  
+  <h1>🔴 Hair Removal System - Portrait</h1>
+
   <div id="container">
-    <div id="left">
+    <div id="video-section">
       <div id="video-container">
         <img id="cam" src="" alt="camera stream" />
         <div id="crosshair"></div>
       </div>
     </div>
-    
-    <div id="right">
 
+    <div id="controls-section">
       <!-- TREATMENT -->
       <div class="section" id="section-treatment">
         <button class="section-header" type="button" onclick="toggleSection('treatment')">
@@ -476,11 +516,11 @@
           <button onclick="armLaser()" class="small-btn success-btn">ARM</button>
           <button onclick="disarmLaser()" class="small-btn danger-btn">DISARM</button>
         </div>
-        <label class="info-line" style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+        <label class="info-line" style="display:flex;align-items:center;gap:6px;margin-top:6px;">
           <input id="treatArmed" type="checkbox">
           <span class="info-label">Armed after settings update</span>
         </label>
-        <div style="margin-top: 8px;">
+        <div style="margin-top: 6px;">
           <div class="control-row">
             <label>
               <input id="treatVacuumOn" type="checkbox" onchange="toggleVacuum('treat')">
@@ -503,16 +543,16 @@
           <span class="info-label">Targets Ready:</span> <span id="treatTargetCount" class="mono">0</span>
         </div>
         <label>
-          <input id="treatDetectionToggle" type="checkbox" onchange="toggleDetection('treat')"> 
+          <input id="treatDetectionToggle" type="checkbox" onchange="toggleDetection('treat')">
           Detection On/OFF
         </label>
-        <div style="margin-top:4px;">
+        <div style="margin-top:3px;">
           <label class="info-label">Confidence:</label>
           <input id="treatConfRange" type="range" min="0.01" max="1.0" step="0.01" value="0.10" onchange="onConfChange(this.value, 'treat')">
           <span id="treatConfVal">0.10</span>
         </div>
 
-        <div style="margin-top: 6px;">
+        <div style="margin-top: 4px;">
           <label class="info-label">Channel Current / Power (0-100):</label>
           <div class="info-line">A wavelength is active when its current is not 0.</div>
           <div class="wavelength-row">
@@ -537,17 +577,17 @@
           </div>
         </div>
 
-        <div style="margin-top: 6px;">
+        <div style="margin-top: 4px;">
           <label class="info-label">Pulse Duration For Enabled Wavelengths (10-1000 ms):</label>
-          <input id="treatPulse" type="number" min="10" max="1000" value="100" style="width:100%; margin-top:4px;">
+          <input id="treatPulse" type="number" min="10" max="1000" value="100" style="width:100%; margin-top:3px;">
         </div>
 
-        <div class="grid-2" style="margin-top: 8px;">
+        <div class="grid-2" style="margin-top: 6px;">
           <button onclick="updateLaserSettingsFrom('treat')" class="small-btn success-btn">SET LASER</button>
           <button onclick="detectHair()" class="small-btn warning-btn">DETECT HAIR</button>
         </div>
-        <button id="treatmentShootAllBtn" onclick="shootAll('treatment')" class="small-btn success-btn emph-btn" style="width:100%; margin-top: 6px;" disabled>SHOOT ALL</button>
-        <div class="info-line" style="font-size:11px;color:#aaa;">
+        <button id="treatmentShootAllBtn" onclick="shootAll('treatment')" class="small-btn success-btn emph-btn" style="width:100%; margin-top: 4px;" disabled>SHOOT ALL</button>
+        <div class="info-line" style="font-size:9px;color:#aaa;">
           `DETECT HAIR` captures the current detections and updates the sequence target list.
         </div>
       </div>
@@ -576,10 +616,10 @@
         <div class="section-body">
         <div class="panel">
         <label>
-          <input id="detectionToggle" type="checkbox" onchange="toggleDetection()"> 
+          <input id="detectionToggle" type="checkbox" onchange="toggleDetection()">
           Detection On/OFF
         </label>
-        <div style="margin-top:4px;">
+        <div style="margin-top:3px;">
           <label class="info-label">Confidence:</label>
           <input id="confRange" type="range" min="0.01" max="1.0" step="0.01" value="0.10" onchange="onConfChange(this.value)">
           <span id="confVal">0.10</span>
@@ -633,29 +673,29 @@
         </button>
         <div class="section-body">
         <div class="panel">
-        
+
         <!-- Safety -->
         <div class="grid-2">
           <button onclick="armLaser()" class="small-btn success-btn">ARM</button>
           <button onclick="disarmLaser()" class="small-btn danger-btn">DISARM</button>
         </div>
-        <label class="info-line" style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+        <label class="info-line" style="display:flex;align-items:center;gap:6px;margin-top:6px;">
           <input id="lasArmed" type="checkbox">
           <span class="info-label">Armed after settings update</span>
         </label>
-        
-        <!-- Laser Settings -->
-        <hr style="border-color:#555;margin:8px 0;" />
 
-        <div style="margin-top: 8px;">
+        <!-- Laser Settings -->
+        <hr style="border-color:#555;margin:6px 0;" />
+
+        <div style="margin-top: 6px;">
           <label class="info-label">Red Dot:</label>
           <div class="grid-2">
             <button onclick="setRedDotEnabled(true)" class="small-btn">Enable Red DOT</button>
             <button onclick="setRedDotEnabled(false)" class="small-btn">Disable Red DOT</button>
           </div>
         </div>
-        
-        <div style="margin-top: 6px;">
+
+        <div style="margin-top: 4px;">
           <label class="info-label">Channel Current / Power (0-100):</label>
           <div class="info-line">A wavelength is active when its current is not 0.</div>
           <div class="wavelength-row">
@@ -678,19 +718,19 @@
               </label>
             </div>
           </div>
-          <button onclick="setChannelPower()" class="small-btn" style="width:100%; margin-top: 6px;">Apply Currents</button>
+          <button onclick="setChannelPower()" class="small-btn" style="width:100%; margin-top: 4px;">Apply Currents</button>
         </div>
-        
-        <div style="margin-top: 6px;">
+
+        <div style="margin-top: 4px;">
           <label class="info-label">Pulse Duration For Enabled Wavelengths (10-1000 ms):</label>
           <div class="grid-2">
             <input id="lasPulse" type="number" min="10" max="1000" value="100">
             <button onclick="setLasPulse()" class="small-btn">Set</button>
           </div>
-          <button onclick="updateLaserSettingsFrom('las')" class="small-btn success-btn" style="width:100%; margin-top: 6px;">
+          <button onclick="updateLaserSettingsFrom('las')" class="small-btn success-btn" style="width:100%; margin-top: 4px;">
             Update LASER Settings
           </button>
-          <button onclick="fireSingleShot()" class="small-btn danger-btn emph-btn" style="width:100%; margin-top: 6px;">FIRE</button>
+          <button onclick="fireSingleShot()" class="small-btn danger-btn emph-btn" style="width:100%; margin-top: 4px;">FIRE</button>
         </div>
       </div>
         </div>
@@ -727,7 +767,7 @@
           <button onclick="haltSeq()" class="small-btn warning-btn emph-btn">HALT</button>
           <button onclick="stopSeq()" class="small-btn danger-btn emph-btn">STOP</button>
         </div>
-        <div class="info-line" style="font-size:11px;color:#aaa;">
+        <div class="info-line" style="font-size:9px;color:#aaa;">
           `Update Target Points` loads the captured detections into the controller. `SHOOT ALL` then starts the already loaded list.
         </div>
       </div>
@@ -742,7 +782,7 @@
         </button>
       <div class="section-body">
         <div class="panel test-panel">
-        <div style="margin-top: 6px;">
+        <div style="margin-top: 4px;">
           <label class="info-label">Raw Serial Command:</label>
           <div class="grid-3">
             <input id="rawSerialCommand" type="text" list="rawSerialCommandList" placeholder="APP_PING or TARGET_GET_STATE" oninput="updateRawCommandHint()">
@@ -750,9 +790,9 @@
             <button onclick="runRawSerialCommand()" class="small-btn success-btn">Execute</button>
           </div>
           <datalist id="rawSerialCommandList"></datalist>
-          <div id="rawSerialCommandHelp" class="info-line" style="font-size:11px;color:#aaa;">Type a command name to see a short description.</div>
+          <div id="rawSerialCommandHelp" class="info-line" style="font-size:9px;color:#aaa;">Type a command name to see a short description.</div>
         </div>
-        <button onclick="showCommandPicker()" class="small-btn" style="width:100%; margin-top: 6px;">APP_GET_COMMANDS</button>
+        <button onclick="showCommandPicker()" class="small-btn" style="width:100%; margin-top: 4px;">APP_GET_COMMANDS</button>
         <textarea id="testResultArea" class="test-result" readonly></textarea>
         <div class="test-event-list" id="testEventList">
           <span style="color: #999;">No async test events</span>
@@ -818,7 +858,7 @@
           </label>
           <span id="vacuumPanelCheckBadge" class="status-badge status-idle">OFF</span>
         </div>
-        <button onclick="refreshVacuumStatus(true)" class="small-btn" style="width:100%; margin-top: 6px;">Refresh Vacuum Status</button>
+        <button onclick="refreshVacuumStatus(true)" class="small-btn" style="width:100%; margin-top: 4px;">Refresh Vacuum Status</button>
       </div>
         </div>
       </div>

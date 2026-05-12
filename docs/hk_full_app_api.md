@@ -9,10 +9,12 @@ uvicorn app.hk_full_app:app --host 0.0.0.0 --port 8000
 ```
 
 Base URL examples in this document use `http://localhost:8000`.
+The backend also accepts the same endpoints under `http://localhost:8000/api/...` so external frontends can use a stable API prefix.
 
 ## Runtime Model
 
 - The root page `/` serves `app/hk_full_app.html`.
+- The same API is reachable with or without the `/api` prefix.
 - CORS is open to all origins.
 - Most write endpoints use query parameters, not JSON bodies.
 - The raw-command endpoint and laser settings endpoint use JSON request bodies.

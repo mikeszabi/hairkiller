@@ -132,7 +132,7 @@ def merge_predictions(predictions, original_shape, grid_size=(4, 3)):
 
 def detect_red_dot(img, hsv_lower1=(0, 50, 250), hsv_upper1=(20, 240, 255),
                    hsv_lower2=(160, 50, 250), hsv_upper2=(180, 240, 255),
-                   central_frac=0.75, blur=5):
+                   central_frac=0.75, blur=5, min_area=12, morph_kernel=3):
     """Detect red dot in *img* and return (mask, center).
 
     Parameters
@@ -181,11 +181,23 @@ def detect_red_dot(img, hsv_lower1=(0, 50, 250), hsv_upper1=(20, 240, 255),
     if blur and blur > 1:
         mask = cv2.medianBlur(mask, blur)
 
+    if morph_kernel and morph_kernel > 1:
+        kernel = np.ones((morph_kernel, morph_kernel), np.uint8)
+        # Opening removes isolated hot pixels, closing reconnects a slightly
+        # fragmented laser spot into a single blob.
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+
     # find centre
     center = None
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if contours:
         c = max(contours, key=cv2.contourArea)
-        (x, y), _ = cv2.minEnclosingCircle(c)
-        center = (int(x), int(y))
+        area = cv2.contourArea(c)
+        if area >= float(min_area):
+            moments = cv2.moments(c)
+            if moments["m00"] != 0:
+                x = moments["m10"] / moments["m00"]
+                y = moments["m01"] / moments["m00"]
+                center = (int(round(x)), int(round(y)))
     return mask, center

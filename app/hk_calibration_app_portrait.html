@@ -3,38 +3,40 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>HK Calibration App v2 (Merged Backend)</title>
+  <title>HK Calibration App - Portrait</title>
   <style>
     * { box-sizing: border-box; }
-    body { 
-      font-family: sans-serif; 
-      background: #222; 
-      color: #eee; 
-      padding: 10px; 
+    body {
+      font-family: sans-serif;
+      background: #222;
+      color: #eee;
+      padding: 6px;
       margin: 0;
+      overflow-x: hidden;
+      font-size: 13px;
     }
-    h1 { color: #0f0; margin-top: 0; }
-    h2 { color: #0f0; font-size: 14px; margin: 12px 0 8px 0; border-bottom: 1px solid #0f0; padding-bottom: 4px; }
-    
+    h1 {
+      color: #0f0;
+      margin: 0 0 8px 0;
+      font-size: 18px;
+      text-align: center;
+    }
     #container {
       display: flex;
-      gap: 15px;
-      height: 100vh;
-      padding: 10px;
+      flex-direction: column;
+      gap: 10px;
+      height: calc(100vh - 16px);
     }
-    
-    #left {
-      flex: 0 0 60%;
+    #video-section {
+      flex: 0 0 42%;
       display: flex;
       flex-direction: column;
     }
-    
-    #right {
+    #controls-section {
       flex: 1;
       overflow-y: auto;
-      padding-right: 10px;
+      padding-right: 6px;
     }
-    
     #video-container {
       flex: 1;
       display: flex;
@@ -42,82 +44,65 @@
       justify-content: center;
       border: 2px solid #0f0;
       background: #000;
+      border-radius: 6px;
+      overflow: hidden;
+      min-height: 240px;
     }
-    
-    img { 
-      max-width: 100%; 
-      max-height: 100%; 
+    img {
+      max-width: 100%;
+      max-height: 100%;
       display: block;
       cursor: crosshair;
+      object-fit: contain;
     }
-    
-    .panel { 
-      margin-bottom: 15px; 
-      padding: 10px; 
-      background: #333; 
+    .panel {
+      margin-bottom: 10px;
+      padding: 10px;
+      background: #333;
       border: 1px solid #555;
-      border-radius: 4px;
+      border-radius: 6px;
     }
-    
-    .panel-title { 
-      font-weight: bold; 
-      color: #0f0; 
-      font-size: 12px;
+    .panel-title {
       margin: 0 0 8px 0;
+      font-size: 13px;
+      font-weight: bold;
+      color: #0f0;
     }
-    
-    button, input[type=number], input[type=checkbox], input[type=text], label { 
-      margin: 4px 2px; 
-      padding: 6px 10px; 
-      font-size: 13px; 
+    button, input[type=number], input[type=checkbox], input[type=text], label {
+      margin: 3px 1px;
+      padding: 6px 8px;
+      font-size: 13px;
       background: #444;
       color: #eee;
       border: 1px solid #666;
-      border-radius: 3px;
+      border-radius: 4px;
       cursor: pointer;
     }
-    
     button:hover { background: #555; }
     button:active { background: #666; }
-    
+    button:disabled { background: #666; opacity: 0.5; cursor: not-allowed; }
     input[type=checkbox] { cursor: pointer; width: auto; padding: 4px; }
-    input[type=range] {
-      width: 100%;
-      cursor: pointer;
-      accent-color: #ffee44;
-    }
-    
+    input[type=range] { width: 100%; cursor: pointer; accent-color: #ffee44; }
+    input[type=number] { width: 70px; }
     .info-line {
-      margin: 4px 0;
+      margin: 5px 0;
       font-size: 12px;
-      padding: 4px;
+      padding: 5px;
       background: #222;
-      border-radius: 2px;
+      border-radius: 4px;
     }
-    
     .info-label { font-weight: bold; color: #0f0; }
-    
-    .button-group { margin: 6px 0; }
-    
-    .small-button { padding: 4px 8px; font-size: 12px; }
-    
-    input[type=number] { width: 70px; padding: 4px; }
-
-    .hsv-panel {
-      margin-top: 10px;
-      padding-top: 8px;
-      border-top: 1px solid #555;
-    }
-
+    .button-group { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0; }
+    .small-button { padding: 5px 8px; font-size: 12px; }
+    .hsv-panel { margin-top: 10px; padding-top: 8px; border-top: 1px solid #555; }
     .hsv-row {
       display: grid;
-      grid-template-columns: 72px 1fr 34px;
+      grid-template-columns: 88px 1fr 34px;
       gap: 8px;
       align-items: center;
       margin: 6px 0;
       font-size: 12px;
     }
-
     .hsv-row label {
       margin: 0;
       padding: 0;
@@ -125,267 +110,98 @@
       border: 0;
       cursor: default;
     }
-
     .hsv-value {
       font-family: monospace;
       color: #ffee44;
       text-align: right;
     }
-
     .status-on { color: #44ff44; font-weight: bold; }
     .status-off { color: #ff6666; font-weight: bold; }
     .status-unknown { color: #ffcc66; font-weight: bold; }
-    
-    /* ScrollBar styling */
-    #right::-webkit-scrollbar {
-      width: 8px;
-    }
-    #right::-webkit-scrollbar-track {
-      background: #222;
-    }
-    #right::-webkit-scrollbar-thumb {
-      background: #666;
-      border-radius: 4px;
-    }
-    #right::-webkit-scrollbar-thumb:hover {
-      background: #888;
-    }
-
-    @media (orientation: portrait) {
-      body {
-        padding: 6px;
-        overflow-x: hidden;
-      }
-
-      h1 {
-        margin: 0 0 8px 0;
-        font-size: 18px;
-        text-align: center;
-      }
-
-      #container {
-        flex-direction: column;
-        gap: 10px;
-        height: calc(100vh - 16px);
-        padding: 0;
-      }
-
-      #left {
-        flex: 0 0 42%;
-      }
-
-      #right {
-        flex: 1;
-        padding-right: 6px;
-      }
-
-      #video-container {
-        min-height: 240px;
-        border-radius: 6px;
-        overflow: hidden;
-      }
-
-      img {
-        width: 100%;
-        object-fit: contain;
-      }
-
-      .panel {
-        margin-bottom: 10px;
-        border-radius: 6px;
-      }
-    }
+    #controls-section::-webkit-scrollbar { width: 8px; }
+    #controls-section::-webkit-scrollbar-track { background: #222; }
+    #controls-section::-webkit-scrollbar-thumb { background: #666; border-radius: 4px; }
+    #controls-section::-webkit-scrollbar-thumb:hover { background: #888; }
+    .button-group button { flex: 1 1 48%; }
+    .panel button { width: 100%; }
+    .hsv-panel .panel-title { margin-top: 0; }
+    .control-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0; }
+    .control-row label { display: flex; align-items: center; gap: 6px; background: transparent; border: 0; }
+    .control-row input[type=checkbox] { flex: 0 0 auto; }
+    .wide-input { width: calc(100% - 70px); }
   </style>
 </head>
 <body>
-  <h1>HK Calibration App v2 (Merged Backend)</h1>
-  
+  <h1>HK Calibration App - Portrait</h1>
   <div id="container">
-    <div id="left">
-      <div id="video-container">
-        <img id="cam" src="" alt="camera stream" />
+    <div id="video-section">
+      <div class="panel">
+        <div class="panel-title">Camera Stream</div>
+        <div id="video-container">
+          <img id="cam" src="" alt="camera stream" />
+        </div>
       </div>
     </div>
-    
-    <div id="right">
-      <!-- Detection Panel -->
+    <div id="controls-section">
       <div class="panel">
         <div class="panel-title">Red Dot Detection (Calibration)</div>
-        <label>
-          <input id="detectionToggle" type="checkbox" onchange="toggleDetection()"> 
-          Enable red dot detection overlay
-        </label>
-        <label>
-          <input id="maskOverlayToggle" type="checkbox" onchange="toggleMaskOverlay()"> 
-          Show mask overlay
-        </label>
-        <label>
-          <input id="hsvInspectToggle" type="checkbox" onchange="toggleHsvInspectMode()"> 
-          HSV inspect click mode
-        </label>
-        <div class="info-line">
-          <span class="info-label">Dot in image:</span> X=<span id="dotImageX">-</span> Y=<span id="dotImageY">-</span>
-        </div>
-        <div class="info-line">
-          <span class="info-label">Clicked HSV:</span>
-          X=<span id="hsvClickX">-</span> Y=<span id="hsvClickY">-</span>
-          HSV=(<span id="hsvClickValue">-</span>)
-          RGB=(<span id="rgbClickValue">-</span>)
-        </div>
-        <div class="hsv-panel">
-          <div class="panel-title">HSV Limits</div>
-          <div class="info-line">
-            Red wraps around HSV hue, so detection uses two ranges: low hue and high hue.
-          </div>
-          <div class="panel-title">Range 1: Low Hue Red</div>
-          <div class="hsv-row">
-            <label for="hsvLower1H">Lower H</label>
-            <input id="hsvLower1H" type="range" min="0" max="180" value="0" oninput="onHsvSliderInput()">
-            <span id="hsvLower1HValue" class="hsv-value">0</span>
-          </div>
-          <div class="hsv-row">
-            <label for="hsvLower1S">Lower S</label>
-            <input id="hsvLower1S" type="range" min="0" max="255" value="50" oninput="onHsvSliderInput()">
-            <span id="hsvLower1SValue" class="hsv-value">50</span>
-          </div>
-          <div class="hsv-row">
-            <label for="hsvLower1V">Lower V</label>
-            <input id="hsvLower1V" type="range" min="0" max="255" value="250" oninput="onHsvSliderInput()">
-            <span id="hsvLower1VValue" class="hsv-value">250</span>
-          </div>
-          <div class="hsv-row">
-            <label for="hsvUpper1H">Upper H</label>
-            <input id="hsvUpper1H" type="range" min="0" max="180" value="20" oninput="onHsvSliderInput()">
-            <span id="hsvUpper1HValue" class="hsv-value">20</span>
-          </div>
-          <div class="hsv-row">
-            <label for="hsvUpper1S">Upper S</label>
-            <input id="hsvUpper1S" type="range" min="0" max="255" value="240" oninput="onHsvSliderInput()">
-            <span id="hsvUpper1SValue" class="hsv-value">240</span>
-          </div>
-          <div class="hsv-row">
-            <label for="hsvUpper1V">Upper V</label>
-            <input id="hsvUpper1V" type="range" min="0" max="255" value="255" oninput="onHsvSliderInput()">
-            <span id="hsvUpper1VValue" class="hsv-value">255</span>
-          </div>
-          <div class="panel-title">Range 2: High Hue Red</div>
-          <div class="hsv-row">
-            <label for="hsvLower2H">Lower H</label>
-            <input id="hsvLower2H" type="range" min="0" max="180" value="160" oninput="onHsvSliderInput()">
-            <span id="hsvLower2HValue" class="hsv-value">160</span>
-          </div>
-          <div class="hsv-row">
-            <label for="hsvLower2S">Lower S</label>
-            <input id="hsvLower2S" type="range" min="0" max="255" value="50" oninput="onHsvSliderInput()">
-            <span id="hsvLower2SValue" class="hsv-value">50</span>
-          </div>
-          <div class="hsv-row">
-            <label for="hsvLower2V">Lower V</label>
-            <input id="hsvLower2V" type="range" min="0" max="255" value="250" oninput="onHsvSliderInput()">
-            <span id="hsvLower2VValue" class="hsv-value">250</span>
-          </div>
-          <div class="hsv-row">
-            <label for="hsvUpper2H">Upper H</label>
-            <input id="hsvUpper2H" type="range" min="0" max="180" value="180" oninput="onHsvSliderInput()">
-            <span id="hsvUpper2HValue" class="hsv-value">180</span>
-          </div>
-          <div class="hsv-row">
-            <label for="hsvUpper2S">Upper S</label>
-            <input id="hsvUpper2S" type="range" min="0" max="255" value="240" oninput="onHsvSliderInput()">
-            <span id="hsvUpper2SValue" class="hsv-value">240</span>
-          </div>
-          <div class="hsv-row">
-            <label for="hsvUpper2V">Upper V</label>
-            <input id="hsvUpper2V" type="range" min="0" max="255" value="255" oninput="onHsvSliderInput()">
-            <span id="hsvUpper2VValue" class="hsv-value">255</span>
-          </div>
-          <div class="info-line">
-            Range 1: lower=(<span id="hsvLower1Text">0, 50, 250</span>) upper=(<span id="hsvUpper1Text">20, 240, 255</span>)
-          </div>
-          <div class="info-line">
-            Range 2: lower=(<span id="hsvLower2Text">160, 50, 250</span>) upper=(<span id="hsvUpper2Text">180, 240, 255</span>)
-          </div>
-        </div>
+        <label><input id="detectionToggle" type="checkbox" onchange="toggleDetection()"> Enable red dot detection overlay</label>
+        <label><input id="maskOverlayToggle" type="checkbox" onchange="toggleMaskOverlay()"> Show mask overlay</label>
+        <label><input id="hsvInspectToggle" type="checkbox" onchange="toggleHsvInspectMode()"> HSV inspect click mode</label>
+        <div class="info-line"><span class="info-label">Dot in image:</span> X=<span id="dotImageX">-</span> Y=<span id="dotImageY">-</span></div>
+        <div class="info-line"><span class="info-label">Clicked HSV:</span> X=<span id="hsvClickX">-</span> Y=<span id="hsvClickY">-</span> HSV=(<span id="hsvClickValue">-</span>) RGB=(<span id="rgbClickValue">-</span>)</div>
       </div>
-
-      <!-- Laser Panel -->
+      <div class="panel">
+        <div class="panel-title">HSV Limits</div>
+        <div class="info-line">Red wraps around HSV hue, so detection uses two ranges: low hue and high hue.</div>
+        <div class="panel-title">Range 1: Low Hue Red</div>
+        <div class="hsv-row"><label for="hsvLower1H">Lower H</label><input id="hsvLower1H" type="range" min="0" max="180" value="0" oninput="onHsvSliderInput()"><span id="hsvLower1HValue" class="hsv-value">0</span></div>
+        <div class="hsv-row"><label for="hsvLower1S">Lower S</label><input id="hsvLower1S" type="range" min="0" max="255" value="50" oninput="onHsvSliderInput()"><span id="hsvLower1SValue" class="hsv-value">50</span></div>
+        <div class="hsv-row"><label for="hsvLower1V">Lower V</label><input id="hsvLower1V" type="range" min="0" max="255" value="250" oninput="onHsvSliderInput()"><span id="hsvLower1VValue" class="hsv-value">250</span></div>
+        <div class="hsv-row"><label for="hsvUpper1H">Upper H</label><input id="hsvUpper1H" type="range" min="0" max="180" value="20" oninput="onHsvSliderInput()"><span id="hsvUpper1HValue" class="hsv-value">20</span></div>
+        <div class="hsv-row"><label for="hsvUpper1S">Upper S</label><input id="hsvUpper1S" type="range" min="0" max="255" value="240" oninput="onHsvSliderInput()"><span id="hsvUpper1SValue" class="hsv-value">240</span></div>
+        <div class="hsv-row"><label for="hsvUpper1V">Upper V</label><input id="hsvUpper1V" type="range" min="0" max="255" value="255" oninput="onHsvSliderInput()"><span id="hsvUpper1VValue" class="hsv-value">255</span></div>
+        <div class="panel-title">Range 2: High Hue Red</div>
+        <div class="hsv-row"><label for="hsvLower2H">Lower H</label><input id="hsvLower2H" type="range" min="0" max="180" value="160" oninput="onHsvSliderInput()"><span id="hsvLower2HValue" class="hsv-value">160</span></div>
+        <div class="hsv-row"><label for="hsvLower2S">Lower S</label><input id="hsvLower2S" type="range" min="0" max="255" value="50" oninput="onHsvSliderInput()"><span id="hsvLower2SValue" class="hsv-value">50</span></div>
+        <div class="hsv-row"><label for="hsvLower2V">Lower V</label><input id="hsvLower2V" type="range" min="0" max="255" value="250" oninput="onHsvSliderInput()"><span id="hsvLower2VValue" class="hsv-value">250</span></div>
+        <div class="hsv-row"><label for="hsvUpper2H">Upper H</label><input id="hsvUpper2H" type="range" min="0" max="180" value="180" oninput="onHsvSliderInput()"><span id="hsvUpper2HValue" class="hsv-value">180</span></div>
+        <div class="hsv-row"><label for="hsvUpper2S">Upper S</label><input id="hsvUpper2S" type="range" min="0" max="255" value="240" oninput="onHsvSliderInput()"><span id="hsvUpper2SValue" class="hsv-value">240</span></div>
+        <div class="hsv-row"><label for="hsvUpper2V">Upper V</label><input id="hsvUpper2V" type="range" min="0" max="255" value="255" oninput="onHsvSliderInput()"><span id="hsvUpper2VValue" class="hsv-value">255</span></div>
+        <div class="info-line">Range 1: lower=(<span id="hsvLower1Text">0, 50, 250</span>) upper=(<span id="hsvUpper1Text">20, 240, 255</span>)</div>
+        <div class="info-line">Range 2: lower=(<span id="hsvLower2Text">160, 50, 250</span>) upper=(<span id="hsvUpper2Text">180, 240, 255</span>)</div>
+      </div>
       <div class="panel">
         <div class="panel-title">Laser Control</div>
-        <div class="info-line">
-          <span class="info-label">ARM:</span> <span id="laserArmStatus" class="status-unknown">-</span>
-        </div>
-        <div class="info-line">
-          <span class="info-label">RED DOT:</span> <span id="laserRedDotStatus" class="status-unknown">-</span>
-        </div>
-        <div class="button-group">
-          <button onclick="armLaser()" class="small-button">ARM</button>
-          <button onclick="disarmLaser()" class="small-button">DISARM</button>
-        </div>
-        <div class="button-group">
-          <button onclick="setRedDot(true)" class="small-button">Red Dot ON</button>
-          <button onclick="setRedDot(false)" class="small-button">Red Dot OFF</button>
-        </div>
-        <div class="button-group">
-          <button onclick="refreshLaserStatus()" class="small-button">Refresh Laser Status</button>
-        </div>
+        <div class="info-line"><span class="info-label">ARM:</span> <span id="laserArmStatus" class="status-unknown">-</span></div>
+        <div class="info-line"><span class="info-label">RED DOT:</span> <span id="laserRedDotStatus" class="status-unknown">-</span></div>
+        <div class="button-group"><button onclick="armLaser()" class="small-button">ARM</button><button onclick="disarmLaser()" class="small-button">DISARM</button></div>
+        <div class="button-group"><button onclick="setRedDot(true)" class="small-button">Red Dot ON</button><button onclick="setRedDot(false)" class="small-button">Red Dot OFF</button></div>
+        <div class="button-group"><button onclick="refreshLaserStatus()" class="small-button">Refresh Laser Status</button></div>
       </div>
-      
-      <!-- Mover Control Panel -->
       <div class="panel">
         <div class="panel-title">Direct Galvo Control</div>
-        <div class="info-line">
-          <span class="info-label">Position:</span> X=<span id="galvoX">-</span> Y=<span id="galvoY">-</span>
-        </div>
-        <div>
-          X: <input id="moveX" type="number" value="3000"> 
-          Y: <input id="moveY" type="number" value="3000">
-          <button onclick="moveTo()" class="small-button">Move</button>
-        </div>
-        <div class="button-group">
-          <button onclick="moveDir('up')" class="small-button">↑</button>
-          <button onclick="moveDir('down')" class="small-button">↓</button>
-          <button onclick="moveDir('left')" class="small-button">←</button>
-          <button onclick="moveDir('right')" class="small-button">→</button>
-          Step: <input id="step" type="number" value="25" style="width: 50px;">
-        </div>
+        <div class="info-line"><span class="info-label">Position:</span> X=<span id="galvoX">-</span> Y=<span id="galvoY">-</span></div>
+        <div class="control-row"><label>X:</label><input id="moveX" type="number" value="3000"><label>Y:</label><input id="moveY" type="number" value="3000"></div>
+        <button onclick="moveTo()" class="small-button">Move</button>
+        <div class="button-group"><button onclick="moveDir('up')" class="small-button">↑</button><button onclick="moveDir('down')" class="small-button">↓</button><button onclick="moveDir('left')" class="small-button">←</button><button onclick="moveDir('right')" class="small-button">→</button></div>
+        <div class="control-row"><label>Step:</label><input id="step" type="number" value="25" style="width: 70px;"></div>
       </div>
-      
-      <!-- Calibration Panel -->
       <div class="panel">
         <div class="panel-title">Calibration Collection</div>
-        <div class="info-line">
-          <span class="info-label">Points stored:</span> <span id="storedCount">0</span>
-        </div>
-        <div class="button-group">
-          <button onclick="startCalibration()" class="small-button">Start</button>
-          <button onclick="storePoint()" class="small-button">Store Point</button>
-        </div>
-        <div class="button-group">
-          <button onclick="saveCalibration()" class="small-button">Calculate & Save Homography</button>
-        </div>
+        <div class="info-line"><span class="info-label">Points stored:</span> <span id="storedCount">0</span></div>
+        <div class="button-group"><button onclick="startCalibration()" class="small-button">Start</button><button onclick="storePoint()" class="small-button">Store Point</button></div>
+        <button onclick="saveCalibration()" class="small-button">Calculate & Save Homography</button>
       </div>
-      
-      <!-- Homography Testing Panel -->
       <div class="panel">
         <div class="panel-title">Homography Test (Click on video to move)</div>
-        <div class="info-line">
-          <span class="info-label">Click image coord:</span> X=<span id="imgX">-</span> Y=<span id="imgY">-</span>
-        </div>
-        <div class="info-line">
-          <span class="info-label">Target galvo:</span> X=<span id="tarX">-</span> Y=<span id="tarY">-</span>
-        </div>
-        <div class="info-line">
-          <span class="info-label">Move result:</span> <span id="moveRes">-</span>
-        </div>
-        <div class="button-group">
-          <button onclick="reloadH()" class="small-button">Reload Homography</button>
-          <span id="reloadStatus" style="font-size: 11px; color: #aaa;"> (not loaded)</span>
-        </div>
+        <div class="info-line"><span class="info-label">Click image coord:</span> X=<span id="imgX">-</span> Y=<span id="imgY">-</span></div>
+        <div class="info-line"><span class="info-label">Target galvo:</span> X=<span id="tarX">-</span> Y=<span id="tarY">-</span></div>
+        <div class="info-line"><span class="info-label">Move result:</span> <span id="moveRes">-</span></div>
+        <div class="button-group"><button onclick="reloadH()" class="small-button">Reload Homography</button><span id="reloadStatus" style="font-size: 11px; color: #aaa;">(not loaded)</span></div>
       </div>
-      
     </div>
   </div>
-
   <script>
     const API = (() => {
       const params = new URLSearchParams(window.location.search);
@@ -522,12 +338,9 @@
       el.className = enabled ? 'status-on' : 'status-off';
     };
 
-    // ==================== Detection & SSE ====================
-    // SSE for red dot coordinates
     const dotEventSource = new EventSource(`${API}/sse/dot`);
     dotEventSource.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      console.log('Dot SSE:', data);
       if (data.x !== null && data.y !== null) {
         document.getElementById('dotImageX').textContent = data.x;
         document.getElementById('dotImageY').textContent = data.y;
@@ -536,22 +349,20 @@
         document.getElementById('dotImageY').textContent = '-';
       }
     };
-    dotEventSource.onerror = (err) => {
-      console.error('Dot SSE error:', err);
-    };
+    dotEventSource.onerror = (err) => { console.error('Dot SSE error:', err); };
 
     const toggleDetection = async () => {
       const checked = document.getElementById('detectionToggle').checked;
       const res = await fetch(`${API}/calibration/detection/toggle?enabled=${checked}`, {method: 'POST'});
       const data = await res.json();
-      console.log("Red dot detection toggled:", data);
+      console.log('Red dot detection toggled:', data);
     };
 
     const toggleMaskOverlay = async () => {
       const checked = document.getElementById('maskOverlayToggle').checked;
       const res = await fetch(`${API}/detection/mask_overlay?enabled=${checked}`, {method: 'POST'});
       const data = await res.json();
-      console.log("Mask overlay toggled:", data);
+      console.log('Mask overlay toggled:', data);
     };
 
     const toggleHsvInspectMode = () => {
@@ -562,18 +373,13 @@
     const measureClickedHsv = async (x, y) => {
       const res = await fetch(`${API}/frame/hsv?x=${x}&y=${y}`);
       const data = await res.json();
-      if (data.error) {
-        console.error('HSV measure failed:', data);
-        return;
-      }
-
+      if (data.error) { console.error('HSV measure failed:', data); return; }
       document.getElementById('hsvClickX').textContent = data.x;
       document.getElementById('hsvClickY').textContent = data.y;
       document.getElementById('hsvClickValue').textContent = data.hsv.join(', ');
       document.getElementById('rgbClickValue').textContent = data.rgb.join(', ');
     };
 
-    // ==================== Laser Control ====================
     const refreshLaserStatus = async () => {
       try {
         const [armRes, redDotRes] = await Promise.all([
@@ -582,10 +388,8 @@
         ]);
         const arm = await armRes.json();
         const redDot = await redDotRes.json();
-
         const armed = arm.armed ?? responseHasOne(arm.response);
         const redDotEnabled = redDot.enabled ?? responseHasOne(redDot.response);
-
         setStatus('laserArmStatus', armed, 'ARMED', 'DISARMED');
         setStatus('laserRedDotStatus', redDotEnabled, 'ON', 'OFF');
       } catch (err) {
@@ -616,7 +420,6 @@
       await refreshLaserStatus();
     };
 
-    // ==================== Galvo Control ====================
     const post = async (endpoint, body={}) => {
       const res = await fetch(`${API}${endpoint}`, {
         method: 'POST',
@@ -630,32 +433,27 @@
       const x = parseInt(document.getElementById('moveX').value);
       const y = parseInt(document.getElementById('moveY').value);
       const r = await post(`/mover/move?x=${x}&y=${y}`);
-      console.log("Moved to", r);
+      console.log('Moved to', r);
     };
 
     const moveDir = async (dir) => {
       const step = parseInt(document.getElementById('step').value);
       const r = await post(`/mover/direction?direction=${dir}&step=${step}`);
-      console.log("Moved", dir, r);
+      console.log('Moved', dir, r);
     };
 
-    // SSE for galvo position
     const galvoEventSource = new EventSource(`${API}/sse/galvo_pos`);
     galvoEventSource.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      console.log('Galvo SSE:', data);
       document.getElementById('galvoX').textContent = data.x !== null ? data.x : 'ERR';
       document.getElementById('galvoY').textContent = data.y !== null ? data.y : 'ERR';
     };
-    galvoEventSource.onerror = (err) => {
-      console.error('Galvo SSE error:', err);
-    };
+    galvoEventSource.onerror = (err) => { console.error('Galvo SSE error:', err); };
 
-    // ==================== Calibration ====================
     const startCalibration = async () => {
       const r = await post('/calibration/start');
-      console.log(r);
       document.getElementById('storedCount').textContent = '0';
+      console.log(r);
     };
 
     const storePoint = async () => {
@@ -674,14 +472,12 @@
       }
     };
 
-    // ==================== Homography Testing ====================
     async function moveByImage(x, y) {
       const res = await fetch(`${API}/mover/move_image?x=${x}&y=${y}`, { method: 'POST' });
       return res.json();
     }
 
     cam.addEventListener('click', async (ev) => {
-      // compute coordinates relative to the actual image size
       const rect = cam.getBoundingClientRect();
       const scaleX = cam.naturalWidth / rect.width;
       const scaleY = cam.naturalHeight / rect.height;
