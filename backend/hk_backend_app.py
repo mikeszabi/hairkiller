@@ -4,6 +4,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 sys.path.append(str(Path(__file__).parent.parent / "code"))
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Query
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -52,7 +53,18 @@ _laser = None  # initialized on startup
 _target = None  # initialized once laser is available
 _vacuum = None  # initialized once laser serial device is available
 
-app = FastAPI(title="hk_backend_app")
+_shutdown = False
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    global _shutdown
+    _shutdown = False
+    yield
+    _shutdown = True
+
+
+app = FastAPI(title="hk_backend_app", lifespan=_lifespan)
 install_api_prefix(app)
 
 app.add_middleware(
@@ -493,7 +505,7 @@ def _generate_camera():
     global _last_detection_count
     last_sent_idx = -1
     
-    while True:
+    while not _shutdown:
         if _uvc is None:
             time.sleep(0.25)
             continue
@@ -718,7 +730,7 @@ def sse_detection():
     """Server-Sent Events endpoint for real-time detection count updates."""
     def event_stream():
         last_sent_count = -1
-        while True:
+        while not _shutdown:
             current_count = _last_detection_count
             if current_count != last_sent_count:
                 last_sent_count = current_count

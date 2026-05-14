@@ -120,7 +120,7 @@ class UVCInterface:
         fourcc: str = FOURCC,
         auto_exposure: bool = False,
         exposure: int | None = EXPOSURE,
-        auto_wb: bool = False,
+        auto_wb: bool = True,
         white_balance: int | None = WHITE_BALANCE,
     ) -> None:
         # store user-provided/default parameters
