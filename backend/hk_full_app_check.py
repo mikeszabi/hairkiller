@@ -248,7 +248,6 @@ def main() -> int:
         "serial",
         "numpy",
         "pydantic",
-        "turbojpeg",
         "torch",
         "ultralytics",
         "sklearn",

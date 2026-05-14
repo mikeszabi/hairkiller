@@ -1,7 +1,10 @@
+numpy==1.26.4
+torch @ https://github.com/ultralytics/assets/releases/download/v0.0.0/torch-2.5.0a0+872d972e41.nv24.08-cp310-cp310-linux_aarch64.whl
+torchvision @ https://github.com/ultralytics/assets/releases/download/v0.0.0/torchvision-0.20.0a0+afc54f7-cp310-cp310-linux_aarch64.whl
 pyserial
-ultralytics
+ultralytics==8.4.50
 onnx
 onnxsim
-scikit-learn
-uvicorn
-fastapi
+scikit-learn==1.7.2
+uvicorn==0.46.0
+fastapi==0.136.1

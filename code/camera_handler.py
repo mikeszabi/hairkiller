@@ -47,7 +47,7 @@ def open_cam(
     fourcc: str = FOURCC,
     auto_exposure: bool = False,
     exposure: int | None = EXPOSURE,
-    auto_wb: bool = False,
+    auto_wb: bool = True,
     white_balance: int | None = WHITE_BALANCE,
 ):
     cap = cv2.VideoCapture(dev, cv2.CAP_V4L2)
@@ -67,8 +67,9 @@ def open_cam(
 
     if hasattr(cv2, "CAP_PROP_AUTO_WB"):
         cap.set(cv2.CAP_PROP_AUTO_WB, 1 if auto_wb else 0)
-    if white_balance is not None and hasattr(cv2, "CAP_PROP_WB_TEMPERATURE"):
-        cap.set(cv2.CAP_PROP_WB_TEMPERATURE, white_balance)
+    if not auto_wb:
+        if white_balance is not None and hasattr(cv2, "CAP_PROP_WB_TEMPERATURE"):
+            cap.set(cv2.CAP_PROP_WB_TEMPERATURE, white_balance)
 
     # Disable auto-exposure so the camera cannot pick exposure times > 1/FPS.
     # With auto on, the driver silently stops streaming in dim light because

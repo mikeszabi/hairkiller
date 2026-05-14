@@ -13,7 +13,6 @@ import logging
 import json
 import numpy as np
 import re
-from turbojpeg import TurboJPEG
 from pydantic import BaseModel
 
 from camera_handler import UVCInterface
@@ -65,7 +64,6 @@ _show_target_points_overlay = False
 _last_detection_count = 0
 _cam_frame_window = 0.25 # sec
 _stream_w, _stream_h = 960, 960  # stream output resolution (native is 1920x1920)
-_turbo = TurboJPEG()
 _max_sequence_targets = 50
 
 # App state
@@ -103,6 +101,13 @@ def _sequence_target_image_points():
         (int(round(point[0][0])), int(round(point[0][1])))
         for point in image_points
     ]
+
+
+def _encode_jpeg(frame, quality: int = 70) -> bytes:
+    ok, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
+    if not ok:
+        raise RuntimeError("JPEG encoding failed")
+    return jpeg.tobytes()
 
 _detector = None
 try:
@@ -379,7 +384,7 @@ def _generate_camera():
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
         
         small = cv2.resize(frame, (_stream_w, _stream_h))
-        buf = _turbo.encode(small, quality=70)
+        buf = _encode_jpeg(small, quality=70)
         yield b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + buf + b'\r\n'
         time.sleep(_cam_frame_window)
 

@@ -43,6 +43,11 @@ python3 -m venv --system-site-packages yolo_venv
 
 ** source yolo_venv/bin/activate **
 
+# Fix common broken environment issues
+pip uninstall -y opencv-python
+pip install --no-cache-dir numpy==1.26.4
+python -c "import numpy as np; print(np.__version__)"
+
 Test OpenCV
 python -c "import cv2; print(cv2.__version__)"
 🔥 Install NVIDIA PyTorch (JetPack 6.x)
@@ -72,11 +77,23 @@ sudo cp -a lib/* /usr/local/cuda/lib64/
 DO NOT USE NumPy 2.x.
 
 pip install --upgrade pip
+pip uninstall -y opencv-python
 pip install --no-cache-dir numpy==1.26.4
 
 Verify:
 
 python -c "import numpy; print(numpy.__version__)"
+
+# Confirm the full stack has compatible packages
+python - <<'PY'
+import numpy as np
+import scipy
+import sklearn
+print('numpy', np.__version__)
+print('scipy', scipy.__version__)
+print('sklearn', sklearn.__version__)
+PY
+
 🧠 Install Torch + Torchvision (Matching Pair)
 
 From Ultralytics Jetson guide:
@@ -87,6 +104,15 @@ https://github.com/ultralytics/assets/releases/download/v0.0.0/torch-2.5.0a0+872
 
 pip install \
 https://github.com/ultralytics/assets/releases/download/v0.0.0/torchvision-0.20.0a0+afc54f7-cp310-cp310-linux_aarch64.whl
+
+If CUDA later reports a driver mismatch such as `found version 12060` with
+`torch 2.12.0+cu130`, pip has replaced the Jetson wheel with a generic PyTorch
+wheel. Repair it with:
+
+pip install --no-cache-dir --force-reinstall --no-deps \
+https://github.com/ultralytics/assets/releases/download/v0.0.0/torch-2.5.0a0+872d972e41.nv24.08-cp310-cp310-linux_aarch64.whl \
+https://github.com/ultralytics/assets/releases/download/v0.0.0/torchvision-0.20.0a0+afc54f7-cp310-cp310-linux_aarch64.whl
+
 Verify CUDA + Torch
 python - <<'PY'
 import torch
@@ -100,7 +126,7 @@ PY
 
 ⚠ DO NOT use [export] on Jetson unless required.
 
-pip install ultralytics
+pip install -r requirements.txt
 pip install psutil polars ultralytics-thop
 ❌ DO NOT INSTALL
 
@@ -206,17 +232,6 @@ Requires: `transformation_matrix.txt` from prior calibration.
 pip install pyserial
 
 ls -l /dev/ttyUSB* /dev/ttyACM* /dev/ttyTHS* 2>/dev/null || true
-
-⚡ TurboJPEG (Fast JPEG Encoding)
-
-Install system library:
-sudo apt-get install -y libturbojpeg
-
-Install Python wrapper (version 1.7.5 for libjpeg-turbo 2.x compatibility):
-pip install 'PyTurboJPEG==1.7.5'
-
-⚠ Note: PyTurboJPEG 2.x requires libjpeg-turbo 3.0+, which is not available in Ubuntu 22.04 repos.
-Use version 1.7.5 for compatibility with the system libturbojpeg package.
 
 🧠 Summary of Critical Jetson Rules
 

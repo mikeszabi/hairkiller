@@ -16,11 +16,6 @@ import re
 import os
 from pydantic import BaseModel
 
-try:
-    from turbojpeg import TurboJPEG
-except ModuleNotFoundError:
-    TurboJPEG = None
-
 from camera_handler import UVCInterface
 from detection_handler import ObjectDetector
 from detection_utils import detect_red_dot, remove_overlapping_boxes, get_box_centers
@@ -88,7 +83,6 @@ _last_detection_count = 0
 _cam_frame_window = 0.0 # sec; frame rate is primarily controlled by _frame_stride
 _frame_stride = max(1, int(os.getenv("HK_FRAME_STRIDE", "2")))
 _stream_w, _stream_h = 960, 960  # stream output resolution (native is 1920x1920)
-_turbo = TurboJPEG() if TurboJPEG is not None else None
 _max_sequence_targets = 50
 
 # App state
@@ -145,9 +139,6 @@ def _sequence_target_image_points():
 
 
 def _encode_jpeg(frame, quality: int = 70) -> bytes:
-    if _turbo is not None:
-        return _turbo.encode(frame, quality=quality)
-
     ok, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
     if not ok:
         raise RuntimeError("JPEG encoding failed")
