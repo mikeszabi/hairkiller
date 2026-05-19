@@ -391,14 +391,14 @@ def move_direction(direction: str = Query(...), step: int = Query(25)):
         return JSONResponse(status_code=500, content={"error": "Galvo interface unavailable"})
     x, y = _galvo.get_position()
     print(f"[GALVO DIR] Current: X={x}, Y={y}, Direction={direction}, Step={step}", flush=True)
-    if direction == "up":
-        y += step
-    elif direction == "down":
+    if direction == "down":
         y -= step
-    elif direction == "left":
-        x += step
+    elif direction == "up":
+        y += step
     elif direction == "right":
         x -= step
+    elif direction == "left":
+        x += step
     print(f"[GALVO DIR] Target: X={x}, Y={y}", flush=True)
     newpos = _galvo.move_2_pos(x, y)
     print(f"[GALVO DIR] Actual after move: X={newpos[0]}, Y={newpos[1]}", flush=True)
