@@ -6,7 +6,7 @@ APP_DIR="${ROOT_DIR}/app"
 
 HOST="${HOST:-0.0.0.0}"
 PORT="${PORT:-8080}"
-BACKEND_API_BASE="${BACKEND_API_BASE:-http://localhost:8000/api}"
+BACKEND_API_BASE="${BACKEND_API_BASE:-}"
 
 usage() {
   cat <<EOF
@@ -17,7 +17,7 @@ Starts a simple static server for the HTML frontends in app/.
 Options:
   --host HOST              Static server host (default: ${HOST})
   --port PORT              Static server port (default: ${PORT})
-  --backend-api-base URL   Backend API base override (default: ${BACKEND_API_BASE})
+  --backend-api-base URL   Backend API base override (default: infer from browser host on port 8000)
   -h, --help               Show this help
 
 Examples:
@@ -59,15 +59,23 @@ fi
 
 PYTHON_BIN="$(command -v python3 || command -v python)"
 
-ENCODED_API="$("${PYTHON_BIN}" - <<PY
+if [[ -n "${BACKEND_API_BASE}" ]]; then
+  ENCODED_API="$("${PYTHON_BIN}" - <<PY
 import urllib.parse
 print(urllib.parse.quote("${BACKEND_API_BASE}", safe=":/"))
 PY
 )"
+else
+  ENCODED_API=""
+fi
 
 frontend_url() {
   local filename="$1"
-  echo "http://localhost:${PORT}/${filename}?api=${ENCODED_API}"
+  if [[ -n "${ENCODED_API}" ]]; then
+    echo "http://localhost:${PORT}/${filename}?api=${ENCODED_API}"
+  else
+    echo "http://localhost:${PORT}/${filename}"
+  fi
 }
 
 cat <<EOF
@@ -78,7 +86,7 @@ Static server:
   http://localhost:${PORT}/
 
 Backend API base override:
-  ${BACKEND_API_BASE}
+  ${BACKEND_API_BASE:-auto: browser host on port 8000}
 
 Frontend URLs:
   Full app:                 $(frontend_url "hk_full_app.html")

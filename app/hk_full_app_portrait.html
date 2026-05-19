@@ -895,14 +895,17 @@
     const API = (() => {
       const params = new URLSearchParams(window.location.search);
       const override = window.HK_API_BASE || params.get('api');
-      if (override) return override.replace(/\/$/, '');
+      if (override) return override.replace(/\/+$/, '');
       if (window.location.origin && window.location.origin !== 'null' && /^https?:/i.test(window.location.origin)) {
+        if (window.location.port && window.location.port !== '8000') {
+          return `${window.location.protocol}//${window.location.hostname}:8000/api`;
+        }
         return `${window.location.origin}/api`;
       }
       return 'http://localhost:8000/api';
     })();
-    document.getElementById('cam').src = `${API}/frame/current?t=${Date.now()}`;
     const cam = document.getElementById('cam');
+    cam.src = `${API}/frame/current?t=${Date.now()}`;
     let detectionOn = false;
     let walking = false;
     let isLaserArmed = false;
