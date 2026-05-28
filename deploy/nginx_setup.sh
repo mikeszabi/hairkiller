@@ -1,0 +1,1 @@
+sudo cp -r ../hairkiller/app/* /var/www/test-frontend

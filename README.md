@@ -244,3 +244,49 @@ NumPy must be 1.26.x (not 2.x)
 Use apt OpenCV
 
 Avoid ultralytics[export] unless necessary
+
+## RUN backend as a service
+
+## Backend (Hairkiller)
+
+The backend is a FastAPI/uvicorn service managed by systemd. The service file is at `deploy/hairkiller-backend.service`.
+
+```bash
+# Install (first time)
+sudo cp deploy/hairkiller-backend.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable hairkiller-backend
+
+# Start / Stop / Restart
+sudo systemctl start hairkiller-backend
+sudo systemctl stop hairkiller-backend
+sudo systemctl restart hairkiller-backend
+
+# Status & logs
+sudo systemctl status hairkiller-backend
+sudo journalctl -u hairkiller-backend -f
+```
+
+### Serial Port Setup
+
+To access the laser device on `/dev/ttyACM0`, run the setup script from the hairkiller project:
+
+```bash
+cd /home/jetson/Projects/hairkiller/setup_scripts
+./setup_serial.sh
+```
+
+This script:
+- Changes ownership of the STM32 Virtual ComPort device to the current user
+- Adds the user to the `dialout` group for serial port access
+- Sets proper permissions (660) on `/dev/ttyACM0`
+
+**Note:** You may need to log out and log back in for group changes to take effect.
+
+## Mock Services
+
+All backend interactions are mocked:
+- **Authentication**: Simulated Supabase auth
+- **Hardware Control**: Simulated Python backend communication
+- **Settings Persistence**: Local state only
+- **Connection Monitoring**: Simulated heartbeat/ping

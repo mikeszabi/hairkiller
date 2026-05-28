@@ -1,0 +1,16 @@
+[Unit]
+Description=Hairkiller Backend
+After=network.target
+
+[Service]
+Type=simple
+User=jetson
+WorkingDirectory=/home/jetson/Projects/hairkiller
+
+ExecStart=/home/jetson/Projects/hairkiller/yolo_venv/bin/uvicorn backend.hk_backend_app:app --host 127.0.0.1 --port 8000
+
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target
