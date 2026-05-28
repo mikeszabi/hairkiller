@@ -2,11 +2,11 @@
 """Command-line preflight checklist for the consolidated backend app.
 
 This script checks the main runtime dependencies used by backend/hk_backend_app.py:
-- Python package imports
-- Required local files
+- Python package imports as one grouped check
+- Required local files as one grouped check
 - CUDA/model readiness for YOLO inference
-- Serial controller availability and basic protocol responses
-- Camera availability and frame capture
+- Microcontroller availability and basic protocol responses
+- Camera stream frame capture
 
 Exit code:
 - 0: all required checks passed
@@ -15,9 +15,7 @@ Exit code:
 
 from __future__ import annotations
 
-import argparse
-import importlib
-import sys
+import argparse, importlib, json, sys, time, urllib.error, urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -59,7 +57,14 @@ class Checklist:
         print("=" * 32)
         for result in self.results:
             status = "OK" if result.ok else ("WARN" if not result.required else "FAIL")
-            print(f"[{status:<4}] {result.name}: {result.message}")
+            detail = result.message if result.message else ""
+            if result.ok and status == "OK" and detail:
+                detail = f": {detail}"
+            elif not result.ok:
+                detail = f": {detail or 'no failure cause reported'}"
+            else:
+                detail = ""
+            print(f"[{status:<4}] {result.name}{detail}")
 
         required_failures = [r for r in self.results if r.required and not r.ok]
         optional_failures = [r for r in self.results if (not r.required) and (not r.ok)]
@@ -82,12 +87,39 @@ def check_import(module_name: str) -> tuple[bool, str]:
     return True, "imported"
 
 
+def check_python_imports(module_names: tuple[str, ...]) -> tuple[bool, str]:
+    failures: list[str] = []
+
+    for module_name in module_names:
+        try:
+            check_import(module_name)
+        except Exception as exc:
+            failures.append(f"{module_name}: {type(exc).__name__}: {exc}")
+
+    if failures:
+        return False, "; ".join(failures)
+    return True, f"all required imports available ({', '.join(module_names)})"
+
+
 def check_required_file(path: Path) -> tuple[bool, str]:
     if not path.exists():
         return False, f"missing: {path}"
     if not path.is_file():
         return False, f"not a file: {path}"
     return True, str(path)
+
+
+def check_required_files(paths: tuple[Path, ...]) -> tuple[bool, str]:
+    failures: list[str] = []
+
+    for path in paths:
+        ok, message = check_required_file(path)
+        if not ok:
+            failures.append(message)
+
+    if failures:
+        return False, "; ".join(failures)
+    return True, "all required files present"
 
 
 def check_torch_cuda() -> tuple[bool, str]:
@@ -174,6 +206,18 @@ def check_serial_handshake(port: str, baud: int, timeout_s: float) -> tuple[bool
         dev.close()
 
 
+def check_microcontroller(port: str, baud: int, timeout_s: float) -> tuple[bool, str]:
+    try:
+        port_ok, port_message = check_serial_port_presence(port)
+        if not port_ok:
+            return False, port_message
+
+        return check_serial_handshake(port, baud, timeout_s)
+    except Exception as exc:
+        _, found_ports = list_found_serial_ports()
+        return False, f"{port} serial check failed: {type(exc).__name__}: {exc}; available ports: {found_ports}"
+
+
 def check_camera_device_path() -> tuple[bool, str]:
     from camera_handler import DEV
 
@@ -219,6 +263,60 @@ def check_camera_stream() -> tuple[bool, str]:
         cap.release()
 
 
+def check_backend_camera_stream(api_base: str, timeout_s: float = 6.0) -> tuple[bool, str]:
+    base = api_base.rstrip("/")
+    health_url = f"{base}/health?t={int(time.time() * 1000)}"
+    stream_url = f"{base}/frame/current?t={int(time.time() * 1000)}"
+
+    try:
+        with urllib.request.urlopen(health_url, timeout=timeout_s) as response:
+            health = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        return False, f"backend health check failed at {health_url}: {type(exc).__name__}: {exc}"
+
+    if not health.get("camera_ready"):
+        return False, f"backend reports camera not ready: {health.get('camera_error') or health}"
+
+    try:
+        with urllib.request.urlopen(stream_url, timeout=timeout_s) as response:
+            content_type = response.headers.get("Content-Type", "")
+            if "multipart/x-mixed-replace" not in content_type:
+                return False, f"unexpected stream content type: {content_type or 'missing'}"
+
+            deadline = time.monotonic() + timeout_s
+            payload = bytearray()
+            while time.monotonic() < deadline and len(payload) < 4096:
+                chunk = response.read(1024)
+                if not chunk:
+                    break
+                payload.extend(chunk)
+                if b"\xff\xd8" in payload and b"Content-Type: image/jpeg" in payload:
+                    return True, f"backend MJPEG stream OK via {stream_url}"
+    except (urllib.error.URLError, TimeoutError) as exc:
+        return False, f"backend camera stream failed at {stream_url}: {type(exc).__name__}: {exc}"
+
+    return False, f"backend stream opened but no JPEG frame arrived within {timeout_s:.1f}s"
+
+
+def check_camera(backend_api_base: str | None = None) -> tuple[bool, str]:
+    if backend_api_base:
+        return check_backend_camera_stream(backend_api_base)
+
+    device_ok, device_message = check_camera_device_path()
+    if not device_ok:
+        _, found_devices = list_found_camera_devices()
+        return False, f"{device_message}; available camera devices: {found_devices}"
+
+    try:
+        return check_camera_stream()
+    except Exception as exc:
+        _, found_devices = list_found_camera_devices()
+        return False, (
+            f"camera stream failed: {type(exc).__name__}: {exc}; "
+            f"configured device: {device_message}; available camera devices: {found_devices}"
+        )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Preflight checklist for backend/hk_backend_app.py")
     parser.add_argument("--port", default="/dev/ttyACM0", help="Serial controller port")
@@ -229,6 +327,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Skip loading the YOLO model file and only check that it exists",
     )
+    parser.add_argument(
+        "--backend-api-base",
+        default="",
+        help="Check the already-running backend camera stream instead of opening the camera device directly",
+    )
     return parser
 
 
@@ -237,11 +340,9 @@ def main() -> int:
 
     model_path = ROOT / "model" / "follicle_exit_v11i_yolov8n_20250513.pt"
     transform_path = ROOT / "transformation_matrix.txt"
-    html_path = ROOT / "app" / "hk_full_app.html"
-
     checklist = Checklist()
 
-    for module_name in (
+    required_modules = (
         "fastapi",
         "uvicorn",
         "cv2",
@@ -251,12 +352,10 @@ def main() -> int:
         "torch",
         "ultralytics",
         "sklearn",
-    ):
-        checklist.run(f"Python import: {module_name}", lambda mn=module_name: check_import(mn))
+    )
 
-    checklist.run("Required file: model", lambda: check_required_file(model_path))
-    checklist.run("Required file: homography", lambda: check_required_file(transform_path))
-    checklist.run("Required file: HTML UI", lambda: check_required_file(html_path))
+    checklist.run("Python imports", lambda: check_python_imports(required_modules))
+    checklist.run("Required files", lambda: check_required_files((model_path, transform_path)))
 
     checklist.run("CUDA available", check_torch_cuda)
     if args.skip_model_load:
@@ -264,21 +363,17 @@ def main() -> int:
     else:
         checklist.run("YOLO model load", lambda: check_yolo_model_load(model_path))
 
-    checklist.run("Found serial ports", list_found_serial_ports, required=False)
-    checklist.run("Serial port present", lambda: check_serial_port_presence(args.port))
     checklist.run(
-        "Serial controller handshake",
-        lambda: check_serial_handshake(args.port, args.baud, args.timeout),
+        f"Microcontroller {args.port} serial handshake",
+        lambda: check_microcontroller(args.port, args.baud, args.timeout),
     )
 
-    checklist.run("Found camera devices", list_found_camera_devices, required=False)
-    checklist.run("Camera device path", check_camera_device_path)
-    checklist.run("Camera stream", check_camera_stream)
+    checklist.run("Camera stream", lambda: check_camera(args.backend_api_base or None))
 
     checklist.print_report()
 
     if checklist.exit_code() == 0:
-        print("Ready to start: uvicorn backend.hk_backend_app:app --reload")
+        print("Ready to start: uvicorn backend.hk_backend_app:app --reload --timeout-graceful-shutdown 1")
     else:
         print("Not ready: fix the FAIL items before starting hk_backend_app.")
 

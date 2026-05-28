@@ -512,6 +512,25 @@
         </button>
         <div class="section-body">
         <div class="panel">
+        <div class="info-line">
+          <span class="info-label">Treatment Mode:</span>
+          <select id="treatmentModeSelect" onchange="setTreatmentMode(this.value)" style="width:100%;margin-top:4px;">
+            <option value="auto">AUTO</option>
+            <option value="semi_auto" selected>SEMI AUTO</option>
+            <option value="manual">MANUAL</option>
+          </select>
+        </div>
+        <div class="grid-2" style="margin-top: 6px;">
+          <button id="treatmentStartBtn" onclick="startTreatment()" class="small-btn success-btn emph-btn">START TREATMENT</button>
+          <button id="treatmentNextBtn" onclick="nextTreatmentTarget()" class="small-btn warning-btn emph-btn" disabled>NEXT</button>
+        </div>
+        <button id="treatmentStopBtn" onclick="stopTreatment()" class="small-btn danger-btn" style="width:100%; margin-top: 4px;">STOP TREATMENT</button>
+        <div class="info-line">
+          <span class="info-label">Treatment:</span> <span id="treatmentStatus" class="mono">IDLE</span>
+        </div>
+        <div class="info-line">
+          <span class="info-label">Manual Remaining:</span> <span id="treatmentManualRemaining" class="mono">0</span>
+        </div>
         <div class="grid-2">
           <button onclick="armLaser()" class="small-btn success-btn">ARM</button>
           <button onclick="disarmLaser()" class="small-btn danger-btn">DISARM</button>
@@ -584,11 +603,10 @@
 
         <div class="grid-2" style="margin-top: 6px;">
           <button onclick="updateLaserSettingsFrom('treat')" class="small-btn success-btn">SET LASER</button>
-          <button onclick="detectHair()" class="small-btn warning-btn">DETECT HAIR</button>
+          <button onclick="detectHair()" class="small-btn warning-btn">DETECT HAIR ONLY</button>
         </div>
-        <button id="treatmentShootAllBtn" onclick="shootAll('treatment')" class="small-btn success-btn emph-btn" style="width:100%; margin-top: 4px;" disabled>SHOOT ALL</button>
         <div class="info-line" style="font-size:9px;color:#aaa;">
-          `DETECT HAIR` captures the current detections and updates the sequence target list.
+          START handles detection, target upload, and shooting according to the selected treatment mode.
         </div>
       </div>
         </div>
@@ -905,7 +923,41 @@
       return 'http://localhost:8000/api';
     })();
     const cam = document.getElementById('cam');
-    cam.src = `${API}/frame/current?t=${Date.now()}`;
+    let cameraReconnectTimer = null;
+    let cameraRetryDelayMs = 1000;
+
+    function scheduleCameraStreamReconnect(reason) {
+      clearTimeout(cameraReconnectTimer);
+      console.warn(`[CAMERA] ${reason}; retrying in ${cameraRetryDelayMs}ms`);
+      cameraReconnectTimer = setTimeout(connectCameraStream, cameraRetryDelayMs);
+      cameraRetryDelayMs = Math.min(Math.round(cameraRetryDelayMs * 1.6), 10000);
+    }
+
+    async function connectCameraStream() {
+      clearTimeout(cameraReconnectTimer);
+      try {
+        const res = await fetch(`${API}/health?t=${Date.now()}`, { cache: 'no-store' });
+        const health = await res.json();
+        if (!res.ok || !health.camera_ready) {
+          throw new Error(health.camera_error || 'camera not ready');
+        }
+        cameraRetryDelayMs = 1000;
+        cam.src = `${API}/frame/current?t=${Date.now()}`;
+      } catch (err) {
+        scheduleCameraStreamReconnect(err.message || 'camera connection failed');
+      }
+    }
+
+    cam.addEventListener('load', () => {
+      cameraRetryDelayMs = 1000;
+    });
+    cam.addEventListener('error', () => {
+      scheduleCameraStreamReconnect('stream image error');
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) connectCameraStream();
+    });
+    connectCameraStream();
     let detectionOn = false;
     let walking = false;
     let isLaserArmed = false;
@@ -921,6 +973,9 @@
     let freshTargetsReadyForShootAll = false;
     let vacuumOn = false;
     let vacuumCheckOn = false;
+    let treatmentMode = 'semi_auto';
+    let treatmentManualRemaining = 0;
+    let treatmentStatusText = 'IDLE';
 
     function toggleSection(sectionName) {
       const section = document.getElementById(`section-${sectionName}`);
@@ -1119,6 +1174,61 @@
         isLaserArmed &&
         freshTargetsReadyForShootAll
       );
+    }
+
+    function renderTreatmentStatus(data = {}) {
+      if (data.mode) treatmentMode = data.mode;
+      if (data.manual_remaining !== undefined) {
+        treatmentManualRemaining = Number(data.manual_remaining || 0);
+      }
+      const overlayValue = data.show_target_points_overlay ?? data.last_result?.show_target_points_overlay;
+      if (overlayValue !== undefined) {
+        showTargetPointsOverlay = Boolean(overlayValue);
+        updateTargetPointsOverlayButton();
+      }
+      const targetCountValue = data.targets_count ?? data.last_result?.targets_count;
+      if (targetCountValue !== undefined) {
+        loadedTargetCount = Number(targetCountValue || 0);
+        updateTargetCountDisplays(targetCountValue);
+      }
+
+      const modeSelect = document.getElementById('treatmentModeSelect');
+      if (modeSelect && modeSelect.value !== treatmentMode) {
+        modeSelect.value = treatmentMode;
+      }
+
+      const statusEl = document.getElementById('treatmentStatus');
+      if (data.status !== undefined) {
+        const nextStatus = data.status || 'IDLE';
+        if (nextStatus !== treatmentStatusText && nextStatus !== 'IDLE') {
+          updateLog(`Treatment status: ${nextStatus}`);
+        }
+        treatmentStatusText = nextStatus;
+        if (statusEl) statusEl.textContent = treatmentStatusText;
+      }
+
+      const remainingEl = document.getElementById('treatmentManualRemaining');
+      if (remainingEl) remainingEl.textContent = String(treatmentManualRemaining);
+
+      const startBtn = document.getElementById('treatmentStartBtn');
+      if (startBtn) {
+        startBtn.disabled = treatmentMode === 'auto';
+        startBtn.textContent = treatmentMode === 'manual' ? 'START MANUAL' : 'START TREATMENT';
+      }
+
+      const nextBtn = document.getElementById('treatmentNextBtn');
+      if (nextBtn) {
+        nextBtn.disabled = treatmentMode !== 'manual' || treatmentManualRemaining <= 0;
+      }
+    }
+
+    async function refreshTreatmentStatus(logFailures = false) {
+      try {
+        const data = await fetchJson('/treatment/status');
+        renderTreatmentStatus(data);
+      } catch (err) {
+        if (logFailures) updateLog(`Treatment status refresh failed: ${err.message || err}`);
+      }
     }
 
     function updateTargetCountDisplays(targetCount) {
@@ -1669,6 +1779,7 @@
     setInterval(() => pollAppErrorEvents(false), 1200);
     setInterval(() => pollSequenceEvents(false), 1200);
     setInterval(() => pollTestEvents(false), 1500);
+    setInterval(() => refreshTreatmentStatus(false), 1200);
 
     function setSensorValue(id, value) {
       const el = document.getElementById(id);
@@ -2129,6 +2240,90 @@
       }
     }
 
+    async function setTreatmentMode(mode) {
+      const label = String(mode || '').replace('_', ' ').toUpperCase();
+      updateLog(`Setting treatment mode to ${label}...`);
+      try {
+        const data = await fetchJson(`/treatment/mode?mode=${encodeURIComponent(mode)}`, {method: 'POST'});
+        renderTreatmentStatus(data);
+        updateLog(`Treatment mode set to ${String(data.mode || mode).replace('_', ' ').toUpperCase()}`);
+      } catch (err) {
+        updateLog(`Treatment mode failed: ${err.message || err}`);
+        await refreshTreatmentStatus(true);
+      }
+    }
+
+    function applyTreatmentResult(data) {
+      renderTreatmentStatus(data);
+      if (data.targets_count !== undefined) {
+        loadedTargetCount = Number(data.targets_count || 0);
+        updateTargetCountDisplays(data.targets_count);
+      }
+      if (data.show_target_points_overlay !== undefined) {
+        showTargetPointsOverlay = Boolean(data.show_target_points_overlay);
+        updateTargetPointsOverlayButton();
+      }
+      if (data.highlight_delay_s > 0) {
+        updateLog(`Target points highlighted for ${data.highlight_delay_s.toFixed(2)}s before shooting`);
+      }
+      if (data.truncated) {
+        updateLog(`Too many detections (${data.detected_count}); limited target loading to ${data.max_targets} points`);
+      }
+      if (data.load_ms !== undefined) {
+        updateLog(`Treatment target loading time: ${data.load_ms} ms`);
+      }
+      if (data.manual_remaining !== undefined) {
+        updateLog(`Manual treatment targets remaining: ${data.manual_remaining}`);
+      }
+      if (data.response) {
+        updateLog(`Treatment response: ${responseText(data.response)}`);
+      }
+    }
+
+    async function startTreatment() {
+      updateLog(`Starting ${treatmentMode.replace('_', ' ').toUpperCase()} treatment...`);
+      try {
+        const data = await fetchJson('/treatment/start', {method: 'POST'});
+        applyTreatmentResult(data);
+        if (data.status === 'shooting') {
+          updateSequenceBadge('RUN');
+        }
+        await refreshSequenceStatus();
+        await refreshTreatmentStatus();
+      } catch (err) {
+        updateLog(`Treatment start blocked: ${err.message || err}`);
+        await refreshTreatmentStatus(true);
+      }
+    }
+
+    async function nextTreatmentTarget() {
+      updateLog('Manual treatment NEXT...');
+      try {
+        const data = await fetchJson('/treatment/next', {method: 'POST'});
+        applyTreatmentResult(data);
+        if (data.done) {
+          updateLog('Manual treatment complete');
+        }
+        await refreshSequenceStatus();
+        await refreshTreatmentStatus();
+      } catch (err) {
+        updateLog(`Manual NEXT blocked: ${err.message || err}`);
+        await refreshTreatmentStatus(true);
+      }
+    }
+
+    async function stopTreatment() {
+      updateLog('Stopping treatment...');
+      try {
+        const data = await fetchJson('/treatment/stop', {method: 'POST'});
+        renderTreatmentStatus(data);
+        updateLog(`Treatment stopped: ${responseText(data.response)}`);
+        await refreshSequenceStatus();
+      } catch (err) {
+        updateLog(`Treatment stop failed: ${err.message || err}`);
+      }
+    }
+
     async function setTargetMode(mode) {
       const label = String(mode || '').toUpperCase();
       updateLog(`Setting target mode to ${label}...`);
@@ -2301,6 +2496,7 @@
       updateWavelengthHighlights();
       await syncLaserSettingsInputs(true);
       await refreshVacuumStatus(true);
+      await refreshTreatmentStatus(true);
       await refreshAppErrors(true);
       await pollAppErrorEvents(true);
       await pollSequenceEvents(true);

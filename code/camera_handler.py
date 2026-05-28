@@ -167,6 +167,51 @@ class UVCInterface:
             raise ValueError(f"Could not open camera {DEV}")
         self.cap = cap
 
+    def _reopen_camera_after_failures(self) -> None:
+        logging.warning(
+            "Camera read failed %s times in a row; reopening %s",
+            self._read_fail_count,
+            DEV,
+        )
+        with self._cap_lock:
+            old_cap = self.cap
+            self.cap = None
+            if old_cap is not None:
+                old_cap.release()
+        with self._lock:
+            self._raw_frame = None
+            self._last_frame_ts = None
+            self._frame_intervals_ms.clear()
+
+        time.sleep(BACKOFF)
+        if not self._running:
+            return
+
+        try:
+            new_cap = open_cam(
+                dev=DEV,
+                width=self.width,
+                height=self.height,
+                fps=self.fps,
+                fourcc=self.fourcc,
+                auto_exposure=self.auto_exposure,
+                exposure=self.exposure,
+                auto_wb=self.auto_wb,
+                white_balance=self.white_balance,
+            )
+        except Exception as exc:
+            logging.warning("Camera reopen failed: %s", exc)
+            new_cap = None
+
+        with self._cap_lock:
+            if new_cap is None:
+                logging.warning("Camera reopen failed: could not open %s", DEV)
+            elif self._running:
+                self.cap = new_cap
+            else:
+                new_cap.release()
+            self._read_fail_count = 0
+
     def _grab_loop(self) -> None:
         """Background thread: grab + decode as fast as possible, store raw frame.
 
@@ -179,6 +224,10 @@ class UVCInterface:
                 ret, frame = cap.read() if cap is not None else (False, None)
             if not ret:
                 self._read_fail_count += 1
+                if self._read_fail_count >= MAX_FAILS:
+                    self._reopen_camera_after_failures()
+                else:
+                    time.sleep(0.02)
                 continue
             now = time.perf_counter()
             with self._lock:
@@ -320,10 +369,19 @@ class UVCInterface:
     def release(self) -> None:
         """Stop the grabber thread and release the underlying VideoCapture."""
         self._running = False
-        self._thread.join(timeout=2)
-        with self._cap_lock:
+        self._thread.join(timeout=0.25)
+
+        acquired = self._cap_lock.acquire(timeout=0.25)
+        if not acquired:
+            logging.warning("Camera grabber did not stop before shutdown timeout")
+            return
+
+        try:
             if self.cap is not None:
                 self.cap.release()
+                self.cap = None
+        finally:
+            self._cap_lock.release()
 
     # context manager support
     def __enter__(self):

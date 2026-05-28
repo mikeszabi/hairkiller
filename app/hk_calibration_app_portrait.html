@@ -216,7 +216,41 @@
       return 'http://localhost:8000/api';
     })();
     const cam = document.getElementById('cam');
-    cam.src = `${API}/frame/current?t=${Date.now()}`;
+    let cameraReconnectTimer = null;
+    let cameraRetryDelayMs = 1000;
+
+    function scheduleCameraStreamReconnect(reason) {
+      clearTimeout(cameraReconnectTimer);
+      console.warn(`[CAMERA] ${reason}; retrying in ${cameraRetryDelayMs}ms`);
+      cameraReconnectTimer = setTimeout(connectCameraStream, cameraRetryDelayMs);
+      cameraRetryDelayMs = Math.min(Math.round(cameraRetryDelayMs * 1.6), 10000);
+    }
+
+    async function connectCameraStream() {
+      clearTimeout(cameraReconnectTimer);
+      try {
+        const res = await fetch(`${API}/health?t=${Date.now()}`, { cache: 'no-store' });
+        const health = await res.json();
+        if (!res.ok || !health.camera_ready) {
+          throw new Error(health.camera_error || 'camera not ready');
+        }
+        cameraRetryDelayMs = 1000;
+        cam.src = `${API}/frame/current?t=${Date.now()}`;
+      } catch (err) {
+        scheduleCameraStreamReconnect(err.message || 'camera connection failed');
+      }
+    }
+
+    cam.addEventListener('load', () => {
+      cameraRetryDelayMs = 1000;
+    });
+    cam.addEventListener('error', () => {
+      scheduleCameraStreamReconnect('stream image error');
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) connectCameraStream();
+    });
+    connectCameraStream();
 
     const responseText = (resp) => {
       if (Array.isArray(resp)) return resp.join(' | ');

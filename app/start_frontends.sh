@@ -89,11 +89,10 @@ Backend API base override:
   ${BACKEND_API_BASE:-auto: browser host on port 8000}
 
 Frontend URLs:
-  Full app:                 $(frontend_url "hk_full_app.html")
   Full app portrait:        $(frontend_url "hk_full_app_portrait.html")
-  Calibration app:          $(frontend_url "hk_calibration_app.html")
   Calibration app portrait: $(frontend_url "hk_calibration_app_portrait.html")
   Camera test:              $(frontend_url "hk_camera_test.html")
+  Status check:             $(frontend_url "hk_full_app_check.html")
 
 Press Ctrl+C to stop.
 EOF

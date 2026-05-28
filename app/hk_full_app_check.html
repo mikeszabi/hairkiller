@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hairkiller Status Check</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root {
+      color-scheme: dark;
+      --bg: #17191b;
+      --panel: #24282b;
+      --line: #3d454a;
+      --text: #eef2f3;
+      --muted: #aeb8bd;
+      --ok: #62d27c;
+      --fail: #ff6b6b;
+      --warn: #f3bc55;
+      --accent: #75b7ff;
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 24px;
+    }
+    main {
+      max-width: 980px;
+      margin: 0 auto;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 28px;
+      letter-spacing: 0;
+    }
+    button {
+      min-height: 42px;
+      padding: 0 18px;
+      border: 1px solid #8bc8ff;
+      border-radius: 8px;
+      background: #1f5f91;
+      color: white;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button:disabled {
+      cursor: wait;
+      opacity: 0.65;
+    }
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 14px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      margin-bottom: 14px;
+    }
+    label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--accent);
+    }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 12px;
+    }
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+    .metric strong {
+      font-size: 22px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+    }
+    th, td {
+      padding: 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+      font-size: 14px;
+    }
+    th {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+    tr:last-child td { border-bottom: none; }
+    .badge {
+      display: inline-block;
+      min-width: 54px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      text-align: center;
+      font-weight: 700;
+      font-size: 12px;
+    }
+    .ok { color: #06150a; background: var(--ok); }
+    .fail { color: #1b0505; background: var(--fail); }
+    .warn { color: #1c1102; background: var(--warn); }
+    .empty {
+      padding: 28px;
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+      color: var(--muted);
+      text-align: center;
+    }
+    pre {
+      margin: 14px 0 0 0;
+      padding: 14px;
+      overflow: auto;
+      white-space: pre-wrap;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #101214;
+      color: #d9e1e5;
+      font-size: 13px;
+    }
+    @media (max-width: 680px) {
+      body { padding: 14px; }
+      header, .toolbar {
+        align-items: stretch;
+        flex-direction: column;
+      }
+      button { width: 100%; }
+      th:nth-child(2), td:nth-child(2) { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Hairkiller Status Check</h1>
+      <button id="runButton" type="button">Run Check</button>
+    </header>
+
+    <div class="toolbar">
+      <label>
+        <input id="skipModelLoad" type="checkbox" />
+        Skip YOLO model load
+      </label>
+      <div id="lastRun">Not run yet</div>
+    </div>
+
+    <section class="summary" id="summary"></section>
+    <section id="results" class="empty">Press Run Check.</section>
+    <pre id="rawOutput" hidden></pre>
+  </main>
+
+  <script>
+    const runButton = document.getElementById("runButton");
+    const skipModelLoad = document.getElementById("skipModelLoad");
+    const lastRun = document.getElementById("lastRun");
+    const summary = document.getElementById("summary");
+    const results = document.getElementById("results");
+    const rawOutput = document.getElementById("rawOutput");
+
+    function apiBase() {
+      const params = new URLSearchParams(window.location.search);
+      const explicit = params.get("api");
+      if (explicit) return explicit.replace(/\/+$/, "");
+      if (window.location.origin && window.location.origin !== "null") {
+        return `${window.location.origin}/api`;
+      }
+      return "http://localhost:8000/api";
+    }
+
+    function metric(label, value) {
+      return `<div class="metric"><span>${label}</span><strong>${value}</strong></div>`;
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function renderSummary(data) {
+      const checks = data.checks || [];
+      const okCount = checks.filter((check) => check.status === "OK").length;
+      const failCount = checks.filter((check) => check.status === "FAIL").length;
+      const warnCount = checks.filter((check) => check.status === "WARN").length;
+      summary.innerHTML = [
+        metric("Overall", data.ok ? "OK" : "FAIL"),
+        metric("OK", okCount),
+        metric("FAIL", failCount),
+        metric("WARN", warnCount),
+        metric("Duration", `${Math.round(data.duration_ms || 0)} ms`)
+      ].join("");
+    }
+
+    function renderChecks(checks) {
+      if (!checks || checks.length === 0) {
+        results.className = "empty";
+        results.textContent = "No check rows were returned.";
+        return;
+      }
+
+      results.className = "";
+      results.innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Check</th>
+              <th>Details</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${checks.map((check) => `
+              <tr>
+                <td><span class="badge ${check.status.toLowerCase()}">${check.status}</span></td>
+                <td>${escapeHtml(check.name)}</td>
+                <td>${escapeHtml(check.message || "")}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      `;
+    }
+
+    async function runCheck() {
+      runButton.disabled = true;
+      runButton.textContent = "Running...";
+      lastRun.textContent = "Running";
+      summary.innerHTML = "";
+      results.className = "empty";
+      results.textContent = "Checking";
+      rawOutput.hidden = true;
+
+      const url = new URL(`${apiBase()}/diagnostics/full_app_check`);
+      url.searchParams.set("skip_model_load", skipModelLoad.checked ? "true" : "false");
+
+      try {
+        const response = await fetch(url);
+        const data = await response.json();
+        renderSummary(data);
+        renderChecks(data.checks);
+        rawOutput.hidden = false;
+        rawOutput.textContent = [data.stdout || "", data.stderr || ""].filter(Boolean).join("\n");
+        lastRun.textContent = new Date().toLocaleTimeString();
+      } catch (error) {
+        summary.innerHTML = metric("Overall", "FAIL");
+        results.className = "empty";
+        results.textContent = error.message;
+        lastRun.textContent = "Failed";
+      } finally {
+        runButton.disabled = false;
+        runButton.textContent = "Run Check";
+      }
+    }
+
+    runButton.addEventListener("click", runCheck);
+  </script>
+</body>
+</html>

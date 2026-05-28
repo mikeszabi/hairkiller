@@ -4,8 +4,8 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 sys.path.append(str(Path(__file__).parent.parent / "code"))
 
-from contextlib import asynccontextmanager
-from fastapi import FastAPI, Query
+from contextlib import asynccontextmanager, suppress
+from fastapi import FastAPI, Query, Request
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import time
@@ -15,6 +15,7 @@ import json
 import numpy as np
 import re
 import os
+import subprocess
 from pydantic import BaseModel
 
 from camera_handler import UVCInterface
@@ -56,12 +57,32 @@ _vacuum = None  # initialized once laser serial device is available
 _shutdown = False
 
 
+def _close_runtime_resources() -> None:
+    """Release hardware handles quickly during Uvicorn shutdown."""
+    for name, resource in (
+        ("camera", _uvc),
+        ("vacuum", _vacuum),
+        ("target", _target),
+        ("laser", _laser),
+        ("galvo", _galvo),
+    ):
+        close = getattr(resource, "release", None) or getattr(resource, "close", None)
+        if close is None:
+            continue
+        with suppress(Exception):
+            close()
+            print(f"[SHUTDOWN] Closed {name}", flush=True)
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     global _shutdown
     _shutdown = False
-    yield
-    _shutdown = True
+    try:
+        yield
+    finally:
+        _shutdown = True
+        _close_runtime_resources()
 
 
 app = FastAPI(title="hk_backend_app", lifespan=_lifespan)
@@ -78,6 +99,9 @@ app.add_middleware(
 # Global state
 _uvc = None
 _camera_error = None
+_camera_lock = threading.Lock()
+_last_camera_open_attempt = 0.0
+_camera_retry_interval_s = float(os.getenv("HK_CAMERA_RETRY_INTERVAL", "2.0"))
 try:
     _uvc = UVCInterface()
     print("[CAMERA] Interface initialized", flush=True)
@@ -91,11 +115,13 @@ _walking = False
 _detection_conf = 0.1
 _current_target_image_pt = None
 _show_target_points_overlay = False
+_treatment_highlight_image_points = []
 _last_detection_count = 0
 _cam_frame_window = 0.0 # sec; frame rate is primarily controlled by _frame_stride
 _frame_stride = max(1, int(os.getenv("HK_FRAME_STRIDE", "2")))
 _stream_w, _stream_h = 960, 960  # stream output resolution (native is 1920x1920)
 _max_sequence_targets = 50
+_treatment_highlight_delay_s = float(os.getenv("HK_TREATMENT_HIGHLIGHT_DELAY", "0.75"))
 
 # App state
 _red_dot_enabled = False  # hardware red dot state
@@ -112,6 +138,15 @@ _sequence_events = deque(maxlen=25)
 _sequence_lock = threading.Lock()
 _test_events = deque(maxlen=25)
 _test_lock = threading.Lock()
+_preflight_lock = threading.Lock()
+_treatment_lock = threading.Lock()
+_treatment_mode = "semi_auto"
+_treatment_running = False
+_treatment_last_status = "IDLE"
+_treatment_last_error = None
+_treatment_last_result = None
+_treatment_manual_remaining = 0
+_treatment_auto_vacuum_cycle_done = False
 
 # Background inference optimization
 _inference_cache = None
@@ -150,6 +185,17 @@ def _sequence_target_image_points():
     ]
 
 
+def _draw_target_point_overlay(frame, target_points):
+    if not target_points:
+        return
+    overlay = frame.copy()
+    height, width = frame.shape[:2]
+    for tx, ty in target_points:
+        if 0 <= tx < width and 0 <= ty < height:
+            cv2.circle(overlay, (int(tx), int(ty)), 18, (0, 255, 255), -1)
+    cv2.addWeighted(overlay, 0.5, frame, 0.5, 0, frame)
+
+
 def _encode_jpeg(frame, quality: int = 70) -> bytes:
     ok, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
     if not ok:
@@ -158,7 +204,43 @@ def _encode_jpeg(frame, quality: int = 70) -> bytes:
 
 
 def _camera_ready() -> bool:
-    return _uvc is not None
+    return _ensure_camera() is not None
+
+
+def _ensure_camera(force: bool = False):
+    """Retry camera initialization after backend startup races or USB hiccups."""
+    global _uvc, _camera_error, _last_camera_open_attempt
+
+    if _uvc is not None:
+        return _uvc
+
+    now = time.monotonic()
+    if not force and (now - _last_camera_open_attempt) < _camera_retry_interval_s:
+        return None
+
+    if not _camera_lock.acquire(blocking=False):
+        return _uvc
+
+    try:
+        if _uvc is not None:
+            return _uvc
+
+        now = time.monotonic()
+        if not force and (now - _last_camera_open_attempt) < _camera_retry_interval_s:
+            return None
+        _last_camera_open_attempt = now
+
+        try:
+            _uvc = UVCInterface()
+            _camera_error = None
+            print("[CAMERA] Interface initialized after retry", flush=True)
+        except Exception as exc:
+            _camera_error = str(exc)
+            logging.warning("Camera initialization retry failed: %s", exc)
+            _uvc = None
+        return _uvc
+    finally:
+        _camera_lock.release()
 
 
 def _camera_unavailable_response():
@@ -180,12 +262,13 @@ def _is_stride_frame(frame_idx) -> bool:
 
 def _read_strided_frame(timeout_s: float = 1.0):
     """Return the latest frame whose camera index matches the configured stride."""
-    if _uvc is None:
+    uvc = _ensure_camera()
+    if uvc is None:
         return None, None
 
     deadline = time.perf_counter() + timeout_s
     while time.perf_counter() < deadline:
-        frame, idx = _uvc.read()
+        frame, idx = uvc.read()
         if frame is None:
             time.sleep(0.005)
             continue
@@ -237,12 +320,13 @@ def _benchmark_latency(samples: int) -> dict:
     total_ms = []
     last_idx = None
 
-    if _uvc is None:
+    uvc = _ensure_camera()
+    if uvc is None:
         return {"ok": False, "error": _camera_error or "Camera unavailable"}
 
     while len(total_ms) < samples:
         start = time.perf_counter()
-        frame, idx, captured_ts = _uvc.read_with_meta()
+        frame, idx, captured_ts = uvc.read_with_meta()
         if frame is None or last_idx == idx:
             time.sleep(0.001)
             continue
@@ -271,8 +355,8 @@ def _benchmark_latency(samples: int) -> dict:
         "frame_age_ms": summarize(frame_age_ms),
         "encode_ms": summarize(encode_ms),
         "total_pipeline_ms": summarize(total_ms),
-        "camera_stats": _uvc.get_stats(),
-        "settings": _uvc.get_settings(),
+        "camera_stats": uvc.get_stats(),
+        "settings": uvc.get_settings(),
     }
 
 _detector = None
@@ -307,15 +391,16 @@ def _background_inference_worker():
     last_processed_idx = -1
     print("[INFERENCE THREAD] Started", flush=True)
     
-    while True:
+    while not _shutdown:
         if not _hair_detection_enabled or _detector is None:
             time.sleep(0.1)
             continue
-        if _uvc is None:
+        uvc = _ensure_camera()
+        if uvc is None:
             time.sleep(0.25)
             continue
         
-        frame, idx = _uvc.read()
+        frame, idx = uvc.read()
         if frame is None or idx == last_processed_idx or not _is_stride_frame(idx):
             time.sleep(0.01)
             continue
@@ -358,6 +443,56 @@ class LaserSettingsRequest(BaseModel):
     p1064: int
     pulse_ms: int
     reload_targets: bool = True
+
+
+def _response_text(response) -> str:
+    if response is None:
+        return ""
+    if isinstance(response, (list, tuple)):
+        return " ".join(str(line) for line in response)
+    if isinstance(response, dict):
+        return json.dumps(response)
+    return str(response)
+
+
+def _response_has_nok(response) -> bool:
+    text = _response_text(response).upper()
+    return "NOK" in text or "ERROR:" in text
+
+
+def _parse_firmware_bool(response):
+    text = _response_text(response)
+    match = re.search(r"->\[(.*?)\]", text)
+    if not match:
+        return None
+    value = match.group(1).strip()
+    if value == "1":
+        return True
+    if value == "0":
+        return False
+    return None
+
+
+def _target_state_is_idle(response) -> bool:
+    text = _response_text(response).upper()
+    return "TARGET_STATE_IDLE" in text or re.search(r"\bIDLE\b", text) is not None
+
+
+def _target_error_is_clear(response) -> bool:
+    text = _response_text(response).upper()
+    return (
+        "TARGET_ERROR_NONE" in text
+        or "NO ERROR" in text
+        or "NONE" in text
+    ) and not _response_has_nok(response)
+
+
+def _set_treatment_status(status: str, error: str | None = None, result=None) -> None:
+    global _treatment_last_status, _treatment_last_error, _treatment_last_result
+    _treatment_last_status = status
+    _treatment_last_error = error
+    if result is not None:
+        _treatment_last_result = result
 
 
 def _parse_channel_power_response(lines):
@@ -506,10 +641,11 @@ def _generate_camera():
     last_sent_idx = -1
     
     while not _shutdown:
-        if _uvc is None:
+        uvc = _ensure_camera()
+        if uvc is None:
             time.sleep(0.25)
             continue
-        frame, idx = _uvc.read()
+        frame, idx = uvc.read()
         if frame is None or idx == last_sent_idx or not _is_stride_frame(idx):
             time.sleep(0.01)
             continue
@@ -556,13 +692,9 @@ def _generate_camera():
         # project them back through the inverse homography before drawing.
         if _show_target_points_overlay:
             target_points = _sequence_target_image_points()
-            if target_points:
-                overlay = frame.copy()
-                height, width = frame.shape[:2]
-                for tx, ty in target_points:
-                    if 0 <= tx < width and 0 <= ty < height:
-                        cv2.circle(overlay, (tx, ty), 18, (0, 255, 255), -1)
-                cv2.addWeighted(overlay, 0.5, frame, 0.5, 0, frame)
+            if _treatment_highlight_image_points:
+                target_points = list(dict.fromkeys([*target_points, *_treatment_highlight_image_points]))
+            _draw_target_point_overlay(frame, target_points)
         
         # Target crosshair
         if _current_target_image_pt is not None:
@@ -586,12 +718,100 @@ def root():
     return FileResponse(APP_DIR / "hk_full_app.html")
 
 
+@app.get("/hk_full_app_check.html")
+def full_app_check_page():
+    return FileResponse(APP_DIR / "hk_full_app_check.html")
+
+
+def _parse_preflight_output(output: str) -> list[dict]:
+    checks = []
+    for line in output.splitlines():
+        match = re.match(r"^\[(OK|WARN|FAIL)\s*\]\s+([^:]+?)(?::\s*(.*))?$", line)
+        if not match:
+            continue
+        status, name, message = match.groups()
+        checks.append(
+            {
+                "status": status,
+                "ok": status == "OK",
+                "required": status != "WARN",
+                "name": name.strip(),
+                "message": (message or "").strip(),
+            }
+        )
+    return checks
+
+
+@app.get("/diagnostics/full_app_check")
+def run_full_app_check(
+    request: Request,
+    skip_model_load: bool = Query(False),
+    serial_timeout: float = Query(0.4, ge=0.05, le=5.0),
+    command_timeout: float = Query(90.0, ge=1.0, le=300.0),
+):
+    if not _preflight_lock.acquire(blocking=False):
+        return JSONResponse(
+            status_code=409,
+            content={"ok": False, "error": "hk_full_app_check is already running"},
+        )
+
+    started = time.perf_counter()
+    cmd = [
+        sys.executable,
+        str(ROOT / "backend" / "hk_full_app_check.py"),
+        "--timeout",
+        str(serial_timeout),
+        "--backend-api-base",
+        f"http://127.0.0.1:{request.url.port or 8000}/api",
+    ]
+    if skip_model_load:
+        cmd.append("--skip-model-load")
+
+    try:
+        completed = subprocess.run(
+            cmd,
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            timeout=command_timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        output = (exc.stdout or "") + (exc.stderr or "")
+        return JSONResponse(
+            status_code=504,
+            content={
+                "ok": False,
+                "error": f"hk_full_app_check timed out after {command_timeout:.1f}s",
+                "duration_ms": round((time.perf_counter() - started) * 1000.0, 1),
+                "checks": _parse_preflight_output(output),
+                "stdout": exc.stdout or "",
+                "stderr": exc.stderr or "",
+            },
+        )
+    finally:
+        _preflight_lock.release()
+
+    stdout = completed.stdout or ""
+    stderr = completed.stderr or ""
+    checks = _parse_preflight_output(stdout)
+    return {
+        "ok": completed.returncode == 0,
+        "exit_code": completed.returncode,
+        "duration_ms": round((time.perf_counter() - started) * 1000.0, 1),
+        "checks": checks,
+        "stdout": stdout,
+        "stderr": stderr,
+        "command": cmd,
+    }
+
+
 # ==================== Diagnostics ====================
 @app.get("/health")
 def health():
     frame, idx, captured_ts = (None, None, None)
-    if _uvc is not None:
-        frame, idx, captured_ts = _uvc.read_with_meta()
+    uvc = _ensure_camera()
+    if uvc is not None:
+        frame, idx, captured_ts = uvc.read_with_meta()
     ok = frame is not None
     return {
         "ok": ok and _galvo is not None,
@@ -610,9 +830,10 @@ def health():
 
 @app.get("/frame/meta")
 def frame_meta():
-    if _uvc is None:
+    uvc = _ensure_camera()
+    if uvc is None:
         return _camera_unavailable_response()
-    frame, idx, captured_ts = _uvc.read_with_meta()
+    frame, idx, captured_ts = uvc.read_with_meta()
     if frame is None:
         return JSONResponse(status_code=503, content={"ok": False, "error": "No frame available"})
 
@@ -630,10 +851,11 @@ def frame_meta():
 
 @app.get("/stats")
 def stats():
-    camera_stats = {} if _uvc is None else _uvc.get_stats()
-    camera_settings = {} if _uvc is None else _uvc.get_settings()
+    uvc = _ensure_camera()
+    camera_stats = {} if uvc is None else uvc.get_stats()
+    camera_settings = {} if uvc is None else uvc.get_settings()
     return {
-        "ok": _uvc is not None,
+        "ok": uvc is not None,
         "camera": camera_stats,
         "settings": camera_settings,
         "stream": {
@@ -658,7 +880,7 @@ def stats():
 # ==================== Video Stream ====================
 @app.get("/frame/current")
 def stream_video():
-    if _uvc is None:
+    if _ensure_camera() is None:
         return _camera_unavailable_response()
     return StreamingResponse(_generate_camera(),
                              media_type="multipart/x-mixed-replace; boundary=frame")
@@ -666,9 +888,10 @@ def stream_video():
 
 @app.get("/frame/snapshot")
 def frame_snapshot():
-    if _uvc is None:
+    uvc = _ensure_camera()
+    if uvc is None:
         return _camera_unavailable_response()
-    frame, _, _ = _uvc.read_with_meta()
+    frame, _, _ = uvc.read_with_meta()
     if frame is None:
         return JSONResponse(status_code=503, content={"ok": False, "error": "No frame available"})
     buf = _encode_jpeg(frame, quality=90)
@@ -677,9 +900,10 @@ def frame_snapshot():
 
 @app.get("/camera/settings")
 def get_camera_settings():
-    if _uvc is None:
+    uvc = _ensure_camera()
+    if uvc is None:
         return _camera_unavailable_response()
-    return {"ok": True, "settings": _uvc.get_settings()}
+    return {"ok": True, "settings": uvc.get_settings()}
 
 
 @app.post("/camera/settings")
@@ -690,10 +914,11 @@ def set_camera_settings(
     white_balance: int | None = Query(default=None, ge=2000, le=10000),
     fps: float | None = Query(default=None, ge=1, le=120),
 ):
-    if _uvc is None:
+    uvc = _ensure_camera()
+    if uvc is None:
         return _camera_unavailable_response()
     try:
-        settings = _uvc.apply_settings(
+        settings = uvc.apply_settings(
             auto_exposure=auto_exposure,
             exposure=exposure,
             auto_wb=auto_wb,
@@ -707,7 +932,7 @@ def set_camera_settings(
 
 @app.post("/latency/benchmark")
 def latency_benchmark(samples: int = Query(default=20, ge=5, le=200)):
-    if _uvc is None:
+    if _ensure_camera() is None:
         return _camera_unavailable_response()
     return _benchmark_latency(samples)
 
@@ -1019,6 +1244,284 @@ def get_vacuum_status():
     return _vacuum.get_status()
 
 
+# ==================== Treatment Modes ====================
+def _normalize_treatment_mode(mode: str) -> str | None:
+    normalized = str(mode or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if normalized in {"auto", "automatic"}:
+        return "auto"
+    if normalized in {"semi", "semi_auto", "semiauto"}:
+        return "semi_auto"
+    if normalized == "manual":
+        return "manual"
+    return None
+
+
+def _treatment_safety_snapshot(require_vacuum: bool = True):
+    if _laser is None:
+        return None, JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    if _target is None:
+        return None, JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
+    if _vacuum is None:
+        return None, JSONResponse(status_code=500, content={"error": "Vacuum controller unavailable"})
+
+    vacuum_status = _vacuum.get_status()
+    vacuum_on = vacuum_status.get("vacuum_on")
+    if require_vacuum and vacuum_on is not True:
+        return None, JSONResponse(
+            status_code=409,
+            content={"error": "Vacuum must be ON before treatment", "vacuum": vacuum_status},
+        )
+
+    arm_response = _laser.get_arm_enabled()
+    armed = _parse_firmware_bool(arm_response)
+    if armed is not True:
+        return None, JSONResponse(
+            status_code=409,
+            content={"error": "Laser must be ARMED before treatment", "arm": arm_response},
+        )
+
+    if not any(int(value) > 0 for value in _laser.channel_power):
+        return None, JSONResponse(
+            status_code=409,
+            content={"error": "Laser channel power is not set"},
+        )
+
+    if int(_target.pulse_ms) <= 0:
+        return None, JSONResponse(
+            status_code=409,
+            content={"error": "Laser pulse is not set"},
+        )
+
+    state = _target.get_state()
+    if not _target_state_is_idle(state):
+        return None, JSONResponse(
+            status_code=409,
+            content={"error": "Target sequence is already running", "state": state},
+        )
+
+    last_error = _target.get_last_error()
+    if not _target_error_is_clear(last_error):
+        return None, JSONResponse(
+            status_code=409,
+            content={"error": "Target controller has an uncleared error", "last_error": last_error},
+        )
+
+    return {
+        "vacuum": vacuum_status,
+        "arm": arm_response,
+        "state": state,
+        "last_error": last_error,
+        "power": {
+            "p808": int(_laser.channel_power[0]),
+            "p980": int(_laser.channel_power[1]),
+            "p1064": int(_laser.channel_power[2]),
+        },
+        "pulse_ms": int(_target.pulse_ms),
+    }, None
+
+
+def _capture_and_load_treatment_targets(mode_value: int):
+    global _treatment_highlight_image_points
+    capture = _capture_detections_now()
+    if isinstance(capture, JSONResponse):
+        return None, capture
+    _treatment_highlight_image_points = list(_detected_points)
+
+    targets, error_response = _build_target_points_from_detected()
+    if error_response is not None:
+        return None, error_response
+
+    start_ts = time.perf_counter()
+    load_resp = _load_targets_into_controller(targets, mode=mode_value)
+    load_ms = round((time.perf_counter() - start_ts) * 1000.0, 1)
+    if _response_has_nok(load_resp):
+        return None, JSONResponse(
+            status_code=500,
+            content={"error": "Failed to load treatment targets", "response": load_resp},
+        )
+
+    return {
+        "capture": capture,
+        "targets_count": len(targets),
+        "detected_count": len(_detected_points),
+        "max_targets": _max_sequence_targets,
+        "truncated": len(_detected_points) > len(targets),
+        "targets": targets,
+        "load_ms": load_ms,
+        "load_response": load_resp,
+    }, None
+
+
+def _start_treatment(mode: str, triggered_by: str):
+    global _show_target_points_overlay, _treatment_running, _treatment_manual_remaining, _treatment_last_result
+
+    safety, error_response = _treatment_safety_snapshot(require_vacuum=True)
+    if error_response is not None:
+        _set_treatment_status("BLOCKED", error_response.body.decode("utf-8"))
+        return error_response
+
+    if mode in {"auto", "semi_auto"}:
+        loaded, error_response = _capture_and_load_treatment_targets(TargetInterface.MODE_AUTO)
+        if error_response is not None:
+            _set_treatment_status("ERROR", error_response.body.decode("utf-8"))
+            return error_response
+        if mode == "auto":
+            _show_target_points_overlay = True
+            _set_treatment_status("TARGETS_HIGHLIGHTED")
+            time.sleep(max(0.0, _treatment_highlight_delay_s))
+        start_resp = _target.start_seq()
+        _treatment_running = False
+        result = {
+            "mode": mode,
+            "triggered_by": triggered_by,
+            "status": "shooting",
+            "show_target_points_overlay": _show_target_points_overlay,
+            "highlight_delay_s": _treatment_highlight_delay_s if mode == "auto" else 0.0,
+            "safety": safety,
+            "response": {"load": loaded["load_response"], "start": start_resp},
+            **loaded,
+        }
+        _set_treatment_status("SHOOTING", result=result)
+        return result
+
+    if mode == "manual":
+        loaded, error_response = _capture_and_load_treatment_targets(TargetInterface.MODE_MANUAL)
+        if error_response is not None:
+            _set_treatment_status("ERROR", error_response.body.decode("utf-8"))
+            return error_response
+        _show_target_points_overlay = True
+        _treatment_running = True
+        _treatment_manual_remaining = int(loaded["targets_count"])
+        result = {
+            "mode": mode,
+            "triggered_by": triggered_by,
+            "status": "ready_for_next",
+            "show_target_points_overlay": _show_target_points_overlay,
+            "safety": safety,
+            "manual_remaining": _treatment_manual_remaining,
+            "response": {"load": loaded["load_response"]},
+            **loaded,
+        }
+        _set_treatment_status("READY_FOR_NEXT", result=result)
+        return result
+
+    return JSONResponse(status_code=400, content={"error": f"Unsupported treatment mode: {mode}"})
+
+
+@app.get("/treatment/status")
+def get_treatment_status():
+    return {
+        "mode": _treatment_mode,
+        "running": _treatment_running,
+        "status": _treatment_last_status,
+        "last_error": _treatment_last_error,
+        "last_result": _treatment_last_result,
+        "manual_remaining": _treatment_manual_remaining,
+        "auto_vacuum_cycle_done": _treatment_auto_vacuum_cycle_done,
+        "show_target_points_overlay": _show_target_points_overlay,
+        "targets_count": 0 if _target is None else _target.get_target_count(),
+        "highlight_points_count": len(_treatment_highlight_image_points),
+    }
+
+
+@app.get("/treatment/mode")
+def get_treatment_mode():
+    return get_treatment_status()
+
+
+@app.post("/treatment/mode")
+def set_treatment_mode(mode: str = Query(...)):
+    global _treatment_mode, _treatment_running, _treatment_manual_remaining, _treatment_auto_vacuum_cycle_done
+    normalized = _normalize_treatment_mode(mode)
+    if normalized is None:
+        return JSONResponse(status_code=400, content={"error": f"Unsupported treatment mode: {mode}"})
+    with _treatment_lock:
+        _treatment_mode = normalized
+        _treatment_running = False
+        _treatment_manual_remaining = 0
+        _treatment_auto_vacuum_cycle_done = False
+        _set_treatment_status("IDLE")
+    return get_treatment_status()
+
+
+@app.post("/treatment/start")
+def start_treatment():
+    mode = _treatment_mode
+    if mode == "auto":
+        return JSONResponse(status_code=409, content={"error": "AUTO treatment starts when vacuum is ON"})
+    if not _treatment_lock.acquire(blocking=False):
+        return JSONResponse(status_code=409, content={"error": "Treatment action already running"})
+    try:
+        return _start_treatment(mode, "button")
+    finally:
+        _treatment_lock.release()
+
+
+@app.post("/treatment/next")
+def treatment_next():
+    global _show_target_points_overlay, _treatment_running, _treatment_manual_remaining
+    if _treatment_mode != "manual":
+        return JSONResponse(status_code=409, content={"error": "NEXT is only available in MANUAL treatment mode"})
+    if not _treatment_running or _treatment_manual_remaining <= 0:
+        return JSONResponse(status_code=409, content={"error": "No manual treatment targets are waiting"})
+
+    with _treatment_lock:
+        _show_target_points_overlay = True
+        if _vacuum is None or _vacuum.is_vacuum_on() is not True:
+            _set_treatment_status("BLOCKED", "Vacuum must be ON before manual NEXT")
+            return JSONResponse(status_code=409, content={"error": "Vacuum must be ON before manual NEXT"})
+        if _laser is None or _parse_firmware_bool(_laser.get_arm_enabled()) is not True:
+            _set_treatment_status("BLOCKED", "Laser must be ARMED before manual NEXT")
+            return JSONResponse(status_code=409, content={"error": "Laser must be ARMED before manual NEXT"})
+        if not any(int(value) > 0 for value in _laser.channel_power):
+            _set_treatment_status("BLOCKED", "Laser channel power is not set")
+            return JSONResponse(status_code=409, content={"error": "Laser channel power is not set"})
+
+        last_error = _target.get_last_error() if _target is not None else ["ERROR: target unavailable"]
+        if not _target_error_is_clear(last_error):
+            _set_treatment_status("ERROR", "Target controller has an uncleared error")
+            return JSONResponse(status_code=409, content={"error": "Target controller has an uncleared error", "last_error": last_error})
+
+        state = _target.get_state()
+        state_text = _response_text(state).upper()
+        if "RUN" in state_text or "BUSY" in state_text:
+            return JSONResponse(status_code=409, content={"error": "Target sequence is still busy", "state": state})
+
+        if _target_state_is_idle(state):
+            resp = _target.start_seq_manual()
+        else:
+            resp = _target.resume_seq()
+
+        _treatment_manual_remaining = max(0, _treatment_manual_remaining - 1)
+        if _treatment_manual_remaining == 0:
+            _treatment_running = False
+            _set_treatment_status("DONE")
+        else:
+            _set_treatment_status("READY_FOR_NEXT")
+
+        return {
+            "response": resp,
+            "state": state,
+            "manual_remaining": _treatment_manual_remaining,
+            "done": _treatment_manual_remaining == 0,
+            "targets_count": _target.get_target_count(),
+            "show_target_points_overlay": _show_target_points_overlay,
+        }
+
+
+@app.post("/treatment/stop")
+def stop_treatment():
+    global _treatment_running, _treatment_manual_remaining
+    with _treatment_lock:
+        resp = None
+        if _target is not None:
+            resp = _target.halt_seq()
+        _treatment_running = False
+        _treatment_manual_remaining = 0
+        _set_treatment_status("STOPPED")
+    return {"response": resp, **get_treatment_status()}
+
+
 @app.get("/seq/status")
 def get_sequence_status():
     if _target is None:
@@ -1060,7 +1563,7 @@ def sse_galvo_pos():
     """Server-Sent Events endpoint for real-time galvo position updates."""
     def event_stream():
         last_x, last_y = None, None
-        while True:
+        while not _shutdown:
             if _galvo is not None:
                 x, y = _galvo.get_position()
                 if x != last_x or y != last_y:
@@ -1200,7 +1703,7 @@ def set_detection_hsv(
 
 @app.get("/dot")
 def read_dot():
-    if _uvc is None:
+    if _ensure_camera() is None:
         return {"x": None, "y": None, "error": _camera_error or "Camera unavailable"}
     frame, idx = _read_strided_frame()
     if frame is None:
@@ -1213,9 +1716,10 @@ def read_dot():
 
 @app.get("/frame/hsv")
 def read_frame_hsv(x: int = Query(...), y: int = Query(...)):
-    if _uvc is None:
+    uvc = _ensure_camera()
+    if uvc is None:
         return _camera_unavailable_response()
-    frame, _ = _uvc.read()
+    frame, _ = uvc.read()
     if frame is None:
         return JSONResponse(status_code=503, content={"error": "No frame available"})
 
@@ -1235,8 +1739,8 @@ def read_frame_hsv(x: int = Query(...), y: int = Query(...)):
 def sse_dot():
     def event_stream():
         last_x, last_y = None, None
-        while True:
-            if _uvc is None:
+        while not _shutdown:
+            if _ensure_camera() is None:
                 time.sleep(0.5)
                 continue
             frame, idx = _read_strided_frame()
@@ -1267,12 +1771,11 @@ def set_detection_conf(conf: float = Query(...)):
         return JSONResponse(status_code=400, content={"error": str(e)})
 
 
-@app.post("/detection/capture")
-def capture_detections():
+def _capture_detections_now():
     global _detected_points
     if _detector is None:
         return JSONResponse(status_code=500, content={"error": "Detector unavailable"})
-    if _uvc is None:
+    if _ensure_camera() is None:
         return _camera_unavailable_response()
     
     frame, idx = _read_strided_frame()
@@ -1282,6 +1785,7 @@ def capture_detections():
     try:
         boxes_with_scores = _detector.split_inference(frame, conf=_detection_conf)
         if len(boxes_with_scores) == 0:
+            _detected_points = []
             return {"captured": 0, "points": []}
         
         boxes_distinct = remove_overlapping_boxes(boxes_with_scores)
@@ -1292,6 +1796,11 @@ def capture_detections():
         return {"captured": len(_detected_points), "points": _detected_points, "frame_index": idx}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.post("/detection/capture")
+def capture_detections():
+    return _capture_detections_now()
 
 
 @app.get("/points/list")
@@ -1334,11 +1843,11 @@ def _build_target_points_from_detected():
     return _build_target_points_from_image_points(limited_points)
 
 
-def _load_targets_into_controller(targets):
+def _load_targets_into_controller(targets, mode: int | None = None):
     resp = _target.set_seq_length(len(targets))
     for idx, (tx, ty) in enumerate(targets):
         resp.extend(_target.set_target_point(idx, tx, ty))
-    resp.extend(_target.load_targets())
+    resp.extend(_target.load_targets(mode=mode))
     return resp
 
 
@@ -1369,7 +1878,7 @@ def start_calibration():
 
 @app.post("/calibration/store")
 def store_calibration_point():
-    if _uvc is None:
+    if _ensure_camera() is None:
         return {"stored": len(_calibration_points), "error": _camera_error or "Camera unavailable"}
     frame, idx = _read_strided_frame()
     position = _galvo.get_position() if _galvo is not None else (None, None)
@@ -1868,9 +2377,11 @@ def update_sequence_targets():
 
 @app.post("/seq/clear_targets")
 def clear_sequence_targets():
+    global _treatment_highlight_image_points
     if _target is None:
         return JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
     resp = _target.clear_targets()
+    _treatment_highlight_image_points = []
     return {"response": resp, "targets_count": 0}
 
 
@@ -2022,3 +2533,48 @@ def fire_walk(test_mode: bool = Query(False)):
             "start": start_resp,
         },
     }
+
+
+def _treatment_auto_worker():
+    global _treatment_auto_vacuum_cycle_done
+    while not _shutdown:
+        try:
+            if _treatment_mode != "auto" or _vacuum is None:
+                time.sleep(0.25)
+                continue
+
+            vacuum_on = _vacuum.is_vacuum_on()
+            if vacuum_on is not True:
+                _treatment_auto_vacuum_cycle_done = False
+                time.sleep(0.25)
+                continue
+
+            if _treatment_auto_vacuum_cycle_done:
+                time.sleep(0.25)
+                continue
+
+            if not _treatment_lock.acquire(blocking=False):
+                time.sleep(0.25)
+                continue
+
+            sleep_after_block = False
+            try:
+                result = _start_treatment("auto", "vacuum")
+                if isinstance(result, JSONResponse):
+                    logging.warning("AUTO treatment blocked: %s", result.body.decode("utf-8"))
+                    sleep_after_block = True
+                else:
+                    _treatment_auto_vacuum_cycle_done = True
+            finally:
+                _treatment_lock.release()
+            if sleep_after_block:
+                time.sleep(1.0)
+        except Exception as exc:
+            _set_treatment_status("ERROR", str(exc))
+            logging.warning("AUTO treatment worker error: %s", exc)
+            time.sleep(1.0)
+
+
+_treatment_thread = threading.Thread(target=_treatment_auto_worker, daemon=True)
+_treatment_thread.start()
+print("[TREATMENT THREAD] Auto treatment worker started", flush=True)

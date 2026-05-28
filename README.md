@@ -169,7 +169,9 @@ No torchvision::nms error.
 No "Numpy is not available" error.
 
 ---
-
+### system check
+source yolo_venv/bin/activate
+python backend/hk_full_app_check.py
 
 ### 🔥 Full Hair Removal Control App (`hk_full_app`)
 

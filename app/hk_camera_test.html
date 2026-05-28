@@ -404,8 +404,29 @@
       $("jsonOut").textContent = JSON.stringify(data, null, 2);
     }
 
-    function connectStream() {
+    let cameraReconnectTimer = null;
+    let cameraRetryDelayMs = 1000;
+
+    function scheduleStreamReconnect(reason) {
+      clearTimeout(cameraReconnectTimer);
+      setStatus(`${reason}; retrying in ${(cameraRetryDelayMs / 1000).toFixed(1)}s`, "error");
+      cameraReconnectTimer = setTimeout(connectStream, cameraRetryDelayMs);
+      cameraRetryDelayMs = Math.min(Math.round(cameraRetryDelayMs * 1.6), 10000);
+    }
+
+    async function connectStream() {
+      clearTimeout(cameraReconnectTimer);
       const url = `${baseUrl()}/frame/current?t=${Date.now()}`;
+      try {
+        const health = await fetchJson(`/health?t=${Date.now()}`);
+        if (!health.camera_ready) {
+          throw new Error(health.camera_error || "Camera not ready");
+        }
+      } catch (error) {
+        scheduleStreamReconnect(error.message || "Camera stream not ready");
+        return;
+      }
+      cameraRetryDelayMs = 1000;
       $("cam").src = url;
       setStatus(`Connecting to ${url}`);
     }
@@ -511,8 +532,14 @@
       fetchSnapshot().catch((error) => setStatus(error.message, "error"));
     });
 
-    $("cam").addEventListener("load", () => setStatus("Stream image loaded", "ok"));
-    $("cam").addEventListener("error", () => setStatus("Stream failed to load", "error"));
+    $("cam").addEventListener("load", () => {
+      cameraRetryDelayMs = 1000;
+      setStatus("Stream image loaded", "ok");
+    });
+    $("cam").addEventListener("error", () => scheduleStreamReconnect("Stream failed to load"));
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) connectStream();
+    });
 
     connectStream();
     loadSettings()
