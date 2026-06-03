@@ -1,11 +1,11 @@
-# hk_full_app API Reference
+# Full App And Legacy Workflow API Reference
 
-`app/hk_full_app.py` exposes a FastAPI backend for the HairKiller full application UI, camera stream, detector, galvo mover, laser controller, firmware diagnostics, and target sequence control.
+The current production backend is `backend/hk_backend_app.py`. This document describes the full-application and legacy workflow endpoints that are still used by `app/hk_full_app_portrait.html` and related tools.
 
 Default local URL when started with Uvicorn:
 
 ```bash
-uvicorn app.hk_full_app:app --host 0.0.0.0 --port 8000
+uvicorn backend.hk_backend_app:app --host 0.0.0.0 --port 8000
 ```
 
 Base URL examples in this document use `http://localhost:8000`.
@@ -13,13 +13,16 @@ The backend also accepts the same endpoints under `http://localhost:8000/api/...
 
 ## Runtime Model
 
-- The root page `/` serves `app/hk_full_app.html`.
+- The root page `/` serves the legacy full app file when available.
+- `GET /hk_full_app_check.html` serves the preflight/status UI.
+- `GET /hk_treatment_app_portrait.html` serves the simplified treatment-only UI.
 - The same API is reachable with or without the `/api` prefix.
 - CORS is open to all origins.
 - Most write endpoints use query parameters, not JSON bodies.
 - The raw-command endpoint and laser settings endpoint use JSON request bodies.
 - Camera capture runs continuously in `UVCInterface`.
 - Detection inference runs in a background thread only while detection is enabled.
+- Live detection drawing is controlled separately by `/detection/live_overlay`; detection can be enabled while the camera stream remains clean.
 - The displayed stream is resized to `960x960`; native cropped camera coordinates are `1920x1920`.
 - Galvo and target coordinates are clamped by the handler layer to `0..4095`.
 - Laser, target, and galvo operations depend on the serial controller being available.
@@ -54,7 +57,15 @@ Common hardware errors:
 
 ### `GET /`
 
-Returns the full application HTML UI as a file response.
+Returns the legacy/root full application HTML UI as a file response.
+
+### `GET /hk_full_app_check.html`
+
+Returns the preflight/status HTML UI as a file response.
+
+### `GET /hk_treatment_app_portrait.html`
+
+Returns the simplified treatment-only portrait UI as a file response.
 
 ### `GET /health`
 
@@ -119,8 +130,9 @@ Content-Type: multipart/x-mixed-replace; boundary=frame
 
 Each frame may include:
 
-- Green detection boxes and yellow center markers when detection is enabled.
+- Green detection boxes and yellow center markers when detection and live overlay are enabled.
 - Yellow loaded target overlays when `/seq/show_targets?enabled=true` is active.
+- Calibration red-dot and HSV mask overlays when calibration overlay flags are active.
 - Red crosshair for the current walking target.
 
 ### `GET /sse/detection`
@@ -167,15 +179,22 @@ Response:
 
 ### `GET /detection/status`
 
-Returns detection and red-dot state.
+Returns detection, live overlay, threshold, red-dot, and HSV state.
 
 ```json
-{"detection_enabled":true,"conf":0.1,"red_dot":false}
+{
+  "detection_enabled": true,
+  "hair_detection_enabled": true,
+  "hair_detection_overlay_enabled": true,
+  "conf": 0.1,
+  "red_dot": false
+}
 ```
 
 ### `POST /detection/conf`
 
 Sets detector confidence. The backend clamps the value to `0.01..1.0`.
+Changing confidence clears the cached background inference result.
 
 Query parameters:
 
@@ -185,6 +204,20 @@ Response:
 
 ```json
 {"conf":0.25}
+```
+
+### `POST /detection/live_overlay`
+
+Shows or hides live YOLO boxes on `/frame/current` without turning background detection on/off.
+
+Query parameters:
+
+- `enabled` boolean, required.
+
+Response:
+
+```json
+{"hair_detection_overlay_enabled":true}
 ```
 
 ### `POST /detection/capture`
@@ -634,6 +667,73 @@ Reads laser controller state.
 ## Application/Firmware Control
 
 These endpoints use the laser serial interface to send `APP_*` firmware commands.
+
+### `POST /startup/clean_state`
+
+Puts the backend/UI runtime and microcontroller into a clean startup state:
+
+- hair detection off
+- live detection overlay off
+- red dot off
+- target sequence stopped/halted where possible
+- target list cleared
+- target error cleared
+- laser stopped and disarmed
+- app error cleared
+- app and sequence event buffers cleared
+- treatment runtime reset
+- `APP_STATE` checked before and after cleanup
+
+This endpoint is used by the treatment-only UI `CLEANUP STATES` button and by emergency stop.
+
+## Treatment-Only App Endpoints
+
+The simplified treatment UI uses these endpoints instead of the lower-level sequence controls. They are optimized to avoid expensive full state refreshes after fast actions.
+
+### `GET /treatment/app/status`
+
+Returns treatment mode/status, `APP_STATE`, target state/error, laser arm state, power/pulse, detection threshold/overlay state, loaded target count, and vacuum status. This endpoint performs multiple serial queries and should be called by button, not continuous polling.
+
+### `POST /treatment/app/mode`
+
+Query parameters:
+
+- `mode`: `auto`, `semi_auto`, or `manual`.
+
+Modes:
+
+- `auto`: backend detects and fires automatically when vacuum is ON.
+- `semi_auto`: two phases: `DETECT`, then `FIRE`.
+- `manual`: two phases: `DETECT`, then repeated `NEXT`.
+
+### `POST /treatment/app/detect`
+
+Captures or reuses live cached detection results, converts detections to target coordinates, uploads targets to the controller, and returns target count plus compact treatment state.
+
+Fast path: enable live detection first with `/detection/toggle?enabled=true`; then treatment detect can use the background inference cache.
+
+### `POST /treatment/app/fire`
+
+Starts the already-loaded target sequence for `semi_auto`. Requires vacuum ON, laser ARMED, target idle, target error clear, and nonzero laser power.
+
+### `POST /treatment/app/next`
+
+Manual-mode next target. Requires a prior manual `DETECT`.
+
+### `POST /treatment/app/emergency_stop`
+
+Target halt/stop, laser stop/disarm, vacuum off, then cleanup states.
+
+### `POST /treatment/app/settings`
+
+Query parameters:
+
+- `p808`
+- `p980`
+- `p1064`
+- `pulse_ms`
+
+Sets treatment power/pulse. If targets are already loaded, the backend reloads them so target entries contain current power and pulse.
 
 ### `GET /app/state`
 
