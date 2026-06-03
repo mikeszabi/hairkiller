@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hairkiller Treatment</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, Helvetica, sans-serif;
+      background: #101316;
+      color: #f4f7f8;
+    }
+    .app {
+      width: min(100vw, 820px);
+      margin: 0 auto;
+      padding: 12px;
+      display: grid;
+      gap: 10px;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: 0;
+      color: #ffffff;
+    }
+    .badge {
+      min-width: 74px;
+      text-align: center;
+      padding: 7px 10px;
+      border-radius: 6px;
+      background: #26323a;
+      border: 1px solid #3c4b54;
+      color: #d7e5ea;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .badge.ok { background: #153a27; border-color: #2b8a57; color: #8cffbc; }
+    .badge.warn { background: #483815; border-color: #a77a21; color: #ffd381; }
+    .badge.danger { background: #4c1515; border-color: #bd3232; color: #ffb0a8; }
+    .camera {
+      position: relative;
+      overflow: hidden;
+      border-radius: 8px;
+      border: 1px solid #2b3941;
+      background: #050607;
+      aspect-ratio: 1 / 1;
+    }
+    #cam {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+    .panel {
+      border: 1px solid #2f3d45;
+      border-radius: 8px;
+      background: #171d21;
+      padding: 10px;
+    }
+    .panel-title {
+      margin: 0 0 9px;
+      font-size: 13px;
+      color: #b7c6cc;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .modes {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    button {
+      min-height: 44px;
+      border: 1px solid #41525c;
+      border-radius: 8px;
+      background: #243039;
+      color: #f4f7f8;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button:active { transform: translateY(1px); }
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      transform: none;
+    }
+    button.active {
+      background: #0d5d72;
+      border-color: #1ca1bd;
+      color: #ffffff;
+    }
+    .primary {
+      background: #0d6f45;
+      border-color: #21a66c;
+    }
+    .secondary {
+      background: #4a3a14;
+      border-color: #a9812b;
+    }
+    .danger {
+      background: #ab1111;
+      border-color: #ff4c42;
+      color: #ffffff;
+    }
+    .emergency {
+      min-height: 72px;
+      font-size: 22px;
+      background: #d00000;
+      border: 3px solid #ff6d62;
+      box-shadow: 0 0 0 2px rgba(255, 0, 0, 0.16);
+    }
+    .actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .actions.single {
+      grid-template-columns: 1fr;
+    }
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .threshold-row {
+      display: grid;
+      grid-template-columns: 1fr 52px;
+      gap: 8px;
+      align-items: end;
+      margin-top: 8px;
+    }
+    .settings {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+    label {
+      display: grid;
+      gap: 4px;
+      font-size: 11px;
+      color: #aebdc4;
+      font-weight: 700;
+    }
+    input[type=number] {
+      width: 100%;
+      min-height: 40px;
+      border: 1px solid #3d4c54;
+      border-radius: 7px;
+      background: #0c1013;
+      color: #f4f7f8;
+      padding: 8px;
+      font-size: 16px;
+    }
+    input[type=range] {
+      width: 100%;
+      accent-color: #1ca1bd;
+    }
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .status-item {
+      min-height: 48px;
+      padding: 8px;
+      border-radius: 7px;
+      background: #0e1316;
+      border: 1px solid #26343b;
+      overflow: hidden;
+    }
+    .status-label {
+      color: #87979e;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+    .status-value {
+      color: #f5fafb;
+      font-size: 13px;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }
+    .log {
+      min-height: 96px;
+      max-height: 150px;
+      overflow: auto;
+      white-space: pre-wrap;
+      color: #d2dde1;
+      background: #090c0e;
+      border: 1px solid #253239;
+      border-radius: 7px;
+      padding: 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    @media (min-width: 720px) {
+      .grid.two { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <div class="topbar">
+      <h1>Treatment</h1>
+      <div id="modeBadge" class="badge">SEMI</div>
+    </div>
+
+    <div class="camera">
+      <img id="cam" src="" alt="camera" />
+    </div>
+
+    <button id="emergencyBtn" class="danger emergency" type="button">EMERGENCY STOP</button>
+
+    <section class="panel">
+      <p class="panel-title">Mode</p>
+      <div class="modes">
+        <button id="modeAuto" type="button" data-mode="auto">AUTO</button>
+        <button id="modeSemi" type="button" data-mode="semi_auto">SEMI-AUTO</button>
+        <button id="modeManual" type="button" data-mode="manual">MANUAL</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <p class="panel-title">Treatment</p>
+      <div id="phaseActions" class="actions">
+        <button id="detectBtn" class="secondary" type="button">DETECT</button>
+        <button id="fireBtn" class="primary" type="button">FIRE</button>
+        <button id="nextBtn" class="primary" type="button">NEXT</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <p class="panel-title">Safety</p>
+      <div class="controls">
+        <button id="armBtn" type="button">ARM</button>
+        <button id="vacuumBtn" type="button">VACUUM</button>
+        <button id="detectionBtn" type="button">DETECTION</button>
+        <button id="overlayBtn" type="button">LIVE OVERLAY</button>
+        <button id="checkStatesBtn" type="button">CHECK STATES</button>
+        <button id="cleanupBtn" type="button">CLEANUP STATES</button>
+      </div>
+      <div class="threshold-row">
+        <label>Detection threshold
+          <input id="threshold" type="range" min="0.01" max="1" step="0.01" value="0.10" />
+        </label>
+        <div id="thresholdValue" class="badge">0.10</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <p class="panel-title">Laser</p>
+      <div class="settings">
+        <label>808 %<input id="p808" type="number" min="0" max="100" value="20" /></label>
+        <label>980 %<input id="p980" type="number" min="0" max="100" value="25" /></label>
+        <label>1064 %<input id="p1064" type="number" min="0" max="100" value="50" /></label>
+        <label>Pulse ms<input id="pulse" type="number" min="10" max="1000" value="50" /></label>
+      </div>
+      <div class="actions" style="margin-top:8px;">
+        <button id="applySettingsBtn" class="secondary" type="button">APPLY</button>
+        <button id="tempBtn" type="button">LASER TEMP</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <p class="panel-title">State</p>
+      <div class="status-grid">
+        <div class="status-item"><div class="status-label">APP State</div><div id="appState" class="status-value">-</div></div>
+        <div class="status-item"><div class="status-label">Target State</div><div id="targetState" class="status-value">-</div></div>
+        <div class="status-item"><div class="status-label">Laser</div><div id="laserState" class="status-value">-</div></div>
+        <div class="status-item"><div class="status-label">Vacuum</div><div id="vacuumState" class="status-value">-</div></div>
+        <div class="status-item"><div class="status-label">Targets</div><div id="targetCount" class="status-value">0</div></div>
+        <div class="status-item"><div class="status-label">Temperature</div><div id="laserTemp" class="status-value">-</div></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <p class="panel-title">Log</p>
+      <div id="log" class="log"></div>
+    </section>
+  </main>
+
+  <script>
+    function inferApiBase() {
+      const params = new URLSearchParams(window.location.search);
+      const explicit = params.get('api');
+      if (explicit) return explicit.replace(/\/+$/, '');
+      if (window.location.origin && window.location.origin !== 'null' && /^https?:/i.test(window.location.origin)) {
+        if (window.location.port && window.location.port !== '8000') {
+          return `${window.location.protocol}//${window.location.hostname}:8000/api`;
+        }
+        return `${window.location.origin}/api`;
+      }
+      return 'http://localhost:8000/api';
+    }
+
+    const API = inferApiBase();
+    const state = {
+      mode: 'semi_auto',
+      armed: false,
+      vacuumOn: false,
+      detectionOn: false,
+      overlayOn: false,
+      targets: 0,
+      busy: false,
+      settingsDirty: true,
+    };
+
+    const el = (id) => document.getElementById(id);
+
+    function responseText(value) {
+      if (Array.isArray(value)) return value.join(' ');
+      if (value === undefined || value === null) return '';
+      if (typeof value === 'object') return JSON.stringify(value);
+      return String(value);
+    }
+
+    function extractPayload(response) {
+      const text = responseText(response);
+      const match = text.match(/->\[(.*?)\]/);
+      return match ? match[1] : (text || '-');
+    }
+
+    function log(message) {
+      const stamp = new Date().toLocaleTimeString();
+      el('log').textContent = `[${stamp}] ${message}\n` + el('log').textContent;
+    }
+
+    async function fetchJson(path, options = {}) {
+      const res = await fetch(`${API}${path}`, options);
+      const raw = await res.text();
+      let data = {};
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch (err) {
+        throw new Error(`Non-JSON response ${res.status}: ${raw.slice(0, 180)}`);
+      }
+      if (!res.ok) {
+        throw new Error(data.error || `${res.status} ${res.statusText}`);
+      }
+      return data;
+    }
+
+    function setBusy(busy) {
+      state.busy = busy;
+      document.querySelectorAll('button').forEach((button) => {
+        if (button.id !== 'emergencyBtn') button.disabled = busy;
+      });
+      renderActions();
+    }
+
+    function renderActions() {
+      const mode = state.mode;
+      el('modeBadge').textContent = mode === 'semi_auto' ? 'SEMI' : mode.toUpperCase();
+      el('modeAuto').classList.toggle('active', mode === 'auto');
+      el('modeSemi').classList.toggle('active', mode === 'semi_auto');
+      el('modeManual').classList.toggle('active', mode === 'manual');
+
+      el('detectBtn').style.display = mode === 'auto' ? 'none' : '';
+      el('fireBtn').style.display = mode === 'semi_auto' ? '' : 'none';
+      el('nextBtn').style.display = mode === 'manual' ? '' : 'none';
+      el('phaseActions').className = mode === 'semi_auto' ? 'actions' : 'actions single';
+      el('fireBtn').disabled = state.busy || state.targets <= 0;
+      el('nextBtn').disabled = state.busy || state.targets <= 0;
+
+      el('armBtn').textContent = state.armed ? 'DISARM' : 'ARM';
+      el('armBtn').classList.toggle('active', state.armed);
+      el('vacuumBtn').textContent = state.vacuumOn ? 'VACUUM OFF' : 'VACUUM ON';
+      el('vacuumBtn').classList.toggle('active', state.vacuumOn);
+      el('detectionBtn').textContent = state.detectionOn ? 'DETECTION OFF' : 'DETECTION ON';
+      el('detectionBtn').classList.toggle('active', state.detectionOn);
+      el('overlayBtn').textContent = state.overlayOn ? 'OVERLAY OFF' : 'OVERLAY ON';
+      el('overlayBtn').classList.toggle('active', state.overlayOn);
+    }
+
+    function renderStatus(data) {
+      if (!data) return;
+      state.mode = data.mode || state.mode;
+      state.armed = Boolean(data.laser_armed);
+      state.vacuumOn = Boolean(data.vacuum && data.vacuum.vacuum_on);
+      state.detectionOn = Boolean(data.detection_enabled);
+      state.overlayOn = Boolean(data.hair_detection_overlay_enabled);
+      state.targets = Number(data.loaded_targets ?? data.targets_count ?? 0);
+      if (data.detection_conf !== undefined) {
+        const conf = Number(data.detection_conf);
+        el('threshold').value = conf.toFixed(2);
+        el('thresholdValue').textContent = conf.toFixed(2);
+      }
+      if (data.laser_power) {
+        el('p808').value = data.laser_power.p808 ?? el('p808').value;
+        el('p980').value = data.laser_power.p980 ?? el('p980').value;
+        el('p1064').value = data.laser_power.p1064 ?? el('p1064').value;
+      }
+      if (data.pulse_ms !== undefined && data.pulse_ms !== null) {
+        el('pulse').value = data.pulse_ms;
+      }
+
+      el('appState').textContent = extractPayload(data.app_state);
+      el('targetState').textContent = extractPayload(data.target_state);
+      el('laserState').textContent = state.armed ? 'ARMED' : 'DISARMED';
+      el('vacuumState').textContent = state.vacuumOn ? 'ON' : 'OFF';
+      el('targetCount').textContent = String(state.targets);
+
+      const badge = el('modeBadge');
+      badge.classList.toggle('ok', data.app_state_running && data.target_error_clear);
+      badge.classList.toggle('danger', !data.target_error_clear);
+      badge.classList.toggle('warn', !data.app_state_running && data.target_error_clear);
+      renderActions();
+    }
+
+    async function refreshStatus(logFailure = false) {
+      try {
+        const data = await fetchJson('/treatment/app/status');
+        renderStatus(data);
+        if (logFailure) log('States checked');
+      } catch (err) {
+        if (logFailure) log(`Status failed: ${err.message || err}`);
+      }
+    }
+
+    async function command(label, path, options = {}) {
+      setBusy(true);
+      try {
+        const data = await fetchJson(path, {method: 'POST', ...options});
+        if (data && (data.app_state !== undefined || data.target_state !== undefined || data.mode !== undefined)) {
+          renderStatus(data);
+        }
+        log(label);
+        return data;
+      } catch (err) {
+        log(`${label} failed: ${err.message || err}`);
+        await refreshStatus(false);
+        return null;
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function connectCamera() {
+      try {
+        const health = await fetchJson('/health');
+        if (!health.camera_ready) throw new Error(health.camera_error || 'camera not ready');
+        el('cam').src = `${API}/frame/current?t=${Date.now()}`;
+      } catch (err) {
+        log(`Camera failed: ${err.message || err}`);
+        setTimeout(connectCamera, 2500);
+      }
+    }
+
+    async function setMode(mode) {
+      await command(`Mode ${mode.replace('_', '-').toUpperCase()}`, `/treatment/app/mode?mode=${encodeURIComponent(mode)}`);
+    }
+
+    async function detectTargets() {
+      if (state.settingsDirty) {
+        const settings = await applySettings(false);
+        if (!settings) return;
+      }
+      const data = await command('DETECT complete', '/treatment/app/detect');
+      if (data) {
+        state.targets = Number(data.targets_count ?? data.loaded_targets ?? 0);
+        renderActions();
+        log(`Targets loaded: ${state.targets}`);
+      }
+    }
+
+    async function fireTargets() {
+      if (state.settingsDirty) {
+        const settings = await applySettings(false);
+        if (!settings) return;
+      }
+      await command('FIRE sent', '/treatment/app/fire');
+    }
+
+    async function nextTarget() {
+      if (state.settingsDirty) {
+        const settings = await applySettings(false);
+        if (!settings) return;
+      }
+      const data = await command('NEXT sent', '/treatment/app/next');
+      if (data) {
+        if (data.manual_remaining !== undefined) state.targets = Number(data.manual_remaining || 0);
+        renderActions();
+        log(`Manual remaining: ${data.manual_remaining ?? '-'}`);
+      }
+    }
+
+    async function cleanupStates() {
+      const data = await command('Cleanup complete', '/startup/clean_state');
+      if (data) await refreshStatus(false);
+    }
+
+    async function emergencyStop() {
+      await command('EMERGENCY STOP sent', '/treatment/app/emergency_stop');
+    }
+
+    async function toggleArm() {
+      const path = state.armed ? '/laser/disarm' : '/laser/arm';
+      await command(state.armed ? 'Laser disarmed' : 'Laser armed', path);
+      await refreshStatus(false);
+    }
+
+    async function toggleVacuum() {
+      const path = state.vacuumOn ? '/vacuum/off' : '/vacuum/on';
+      await command(state.vacuumOn ? 'Vacuum off' : 'Vacuum on', path);
+      await refreshStatus(false);
+    }
+
+    async function toggleDetection() {
+      await command(
+        state.detectionOn ? 'Detection off' : 'Detection on',
+        `/detection/toggle?enabled=${!state.detectionOn}`
+      );
+      await refreshStatus(false);
+    }
+
+    function clampNumber(id, fallback, min, max) {
+      const input = el(id);
+      const parsed = parseInt(input.value, 10);
+      const value = Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : fallback;
+      input.value = value;
+      return value;
+    }
+
+    async function applySettings(writeLog = true) {
+      const params = new URLSearchParams({
+        p808: String(clampNumber('p808', 0, 0, 100)),
+        p980: String(clampNumber('p980', 0, 0, 100)),
+        p1064: String(clampNumber('p1064', 0, 0, 100)),
+        pulse_ms: String(clampNumber('pulse', 50, 10, 1000)),
+      });
+      const path = `/treatment/app/settings?${params.toString()}`;
+      if (writeLog) {
+        const data = await command('Laser settings applied', path);
+        if (data) state.settingsDirty = false;
+        return data;
+      }
+      try {
+        const data = await fetchJson(path, {method: 'POST'});
+        if (data.loaded_targets !== undefined) state.targets = Number(data.loaded_targets || 0);
+        if (data.laser_power) {
+          el('p808').value = data.laser_power.p808 ?? el('p808').value;
+          el('p980').value = data.laser_power.p980 ?? el('p980').value;
+          el('p1064').value = data.laser_power.p1064 ?? el('p1064').value;
+        }
+        if (data.pulse_ms !== undefined) el('pulse').value = data.pulse_ms;
+        renderActions();
+        state.settingsDirty = false;
+        return data;
+      } catch (err) {
+        log(`Laser settings failed: ${err.message || err}`);
+        return null;
+      }
+    }
+
+    async function setThreshold(value) {
+      const conf = Number(value).toFixed(2);
+      el('thresholdValue').textContent = conf;
+      try {
+        await fetchJson(`/detection/conf?conf=${conf}`, {method: 'POST'});
+      } catch (err) {
+        log(`Threshold failed: ${err.message || err}`);
+      }
+    }
+
+    async function toggleOverlay() {
+      await command(
+        state.overlayOn ? 'Live overlay off' : 'Live overlay on',
+        `/detection/live_overlay?enabled=${!state.overlayOn}`
+      );
+      await refreshStatus(false);
+    }
+
+    async function queryLaserTemp() {
+      try {
+        const data = await fetchJson('/sensors/values');
+        const temp = data.values && data.values.laserTemp_C !== undefined
+          ? data.values.laserTemp_C
+          : (await fetchJson('/laser/temp')).temp;
+        el('laserTemp').textContent = `${temp} C`;
+        log(`Laser temp: ${temp} C`);
+      } catch (err) {
+        log(`Laser temp failed: ${err.message || err}`);
+      }
+    }
+
+    function bind() {
+      document.querySelectorAll('[data-mode]').forEach((button) => {
+        button.addEventListener('click', () => setMode(button.dataset.mode));
+      });
+      el('detectBtn').addEventListener('click', detectTargets);
+      el('fireBtn').addEventListener('click', fireTargets);
+      el('nextBtn').addEventListener('click', nextTarget);
+      el('cleanupBtn').addEventListener('click', cleanupStates);
+      el('emergencyBtn').addEventListener('click', emergencyStop);
+      el('armBtn').addEventListener('click', toggleArm);
+      el('vacuumBtn').addEventListener('click', toggleVacuum);
+      el('detectionBtn').addEventListener('click', toggleDetection);
+      el('overlayBtn').addEventListener('click', toggleOverlay);
+      el('checkStatesBtn').addEventListener('click', () => refreshStatus(true));
+      el('applySettingsBtn').addEventListener('click', applySettings);
+      el('tempBtn').addEventListener('click', queryLaserTemp);
+      ['p808', 'p980', 'p1064', 'pulse'].forEach((id) => {
+        el(id).addEventListener('input', () => {
+          state.settingsDirty = true;
+        });
+      });
+      el('threshold').addEventListener('input', (event) => {
+        el('thresholdValue').textContent = Number(event.target.value).toFixed(2);
+      });
+      el('threshold').addEventListener('change', (event) => setThreshold(event.target.value));
+      el('cam').addEventListener('error', () => setTimeout(connectCamera, 2500));
+    }
+
+    (async function init() {
+      bind();
+      renderActions();
+      await connectCamera();
+      await cleanupStates();
+      await setMode('semi_auto');
+      await refreshStatus(true);
+    })();
+  </script>
+</body>
+</html>

@@ -126,6 +126,7 @@ _treatment_highlight_delay_s = float(os.getenv("HK_TREATMENT_HIGHLIGHT_DELAY", "
 # App state
 _red_dot_enabled = False  # hardware red dot state
 _calibration_detection_enabled = False
+_hair_detection_overlay_enabled = True
 _mask_overlay_enabled = False
 _calibration_points = []
 _hsv_lower1 = [0, 50, 250]
@@ -487,6 +488,98 @@ def _target_error_is_clear(response) -> bool:
     ) and not _response_has_nok(response)
 
 
+def _app_state_is_running(response) -> bool:
+    text = _response_text(response).upper()
+    return "APP_STATE_RUNNING" in text or re.search(r"\bRUNNING\b", text) is not None
+
+
+def _clean_microcontroller_start_state(source: str = "startup") -> dict:
+    global _hair_detection_enabled, _calibration_detection_enabled, _hair_detection_overlay_enabled, _red_dot_enabled
+    global _show_target_points_overlay, _detected_points, _treatment_highlight_image_points
+    global _treatment_running, _treatment_manual_remaining, _treatment_auto_vacuum_cycle_done
+    global _treatment_last_status, _treatment_last_error, _treatment_last_result
+
+    responses = {}
+
+    _hair_detection_enabled = False
+    _calibration_detection_enabled = False
+    _hair_detection_overlay_enabled = False
+    _red_dot_enabled = False
+    _show_target_points_overlay = False
+    _detected_points = []
+    _treatment_highlight_image_points = []
+    _treatment_running = False
+    _treatment_manual_remaining = 0
+    _treatment_auto_vacuum_cycle_done = False
+    _treatment_last_status = "IDLE"
+    _treatment_last_error = None
+    _treatment_last_result = None
+
+    if _laser is not None:
+        responses["app_state_before"] = _laser.get_app_state()
+        responses["laser_stop"] = _laser.stop()
+        responses["laser_disarm"] = _laser.disarm_laser()
+        responses["laser_clear_error"] = _laser.clear_error()
+        responses["app_clear_error"] = _laser.clear_app_error()
+        responses["red_dot_off"] = _laser.set_red_dot(False)
+        responses["app_state_ready_for_target"] = _laser.get_app_state()
+        deadline = time.monotonic() + 2.0
+        while (
+            not _app_state_is_running(responses["app_state_ready_for_target"])
+            and time.monotonic() < deadline
+        ):
+            time.sleep(0.1)
+            responses["app_state_ready_for_target"] = _laser.get_app_state()
+
+    if _target is not None:
+        responses["target_stop"] = _target.stop_seq()
+        responses["target_halt"] = _target.halt_seq()
+        responses["target_clear_error"] = _target.clear_error()
+        responses["target_clear_targets"] = _target.clear_targets()
+        responses["target_state"] = _target.get_state()
+        responses["target_last_error"] = _target.get_last_error()
+
+    if _laser is not None:
+        for _ in _laser.pop_async_messages():
+            pass
+        responses["app_state_after"] = _laser.get_app_state()
+        deadline = time.monotonic() + 2.0
+        while not _app_state_is_running(responses["app_state_after"]) and time.monotonic() < deadline:
+            time.sleep(0.1)
+            responses["app_state_after"] = _laser.get_app_state()
+        responses["app_last_error"] = _laser.get_app_last_error()
+
+    with _app_error_lock:
+        _app_error_events.clear()
+    with _sequence_lock:
+        _sequence_events.clear()
+
+    target_error_clear = _target is None or _target_error_is_clear(responses.get("target_last_error"))
+    return {
+        "ok": True,
+        "source": source,
+        "app_state_running": _laser is None or _app_state_is_running(responses.get("app_state_after")),
+        "target_error_clear": target_error_clear,
+        "laser_armed": False,
+        "detection_enabled": False,
+        "hair_detection_overlay_enabled": False,
+        "responses": responses,
+    }
+
+
+if _laser is not None or _target is not None:
+    try:
+        cleanup_result = _clean_microcontroller_start_state("backend_startup")
+        print(
+            "[STARTUP] Clean microcontroller state: "
+            f"app_running={cleanup_result['app_state_running']} "
+            f"target_error_clear={cleanup_result['target_error_clear']}",
+            flush=True,
+        )
+    except Exception as exc:
+        logging.warning("Startup microcontroller cleanup failed: %s", exc)
+
+
 def _set_treatment_status(status: str, error: str | None = None, result=None) -> None:
     global _treatment_last_status, _treatment_last_error, _treatment_last_result
     _treatment_last_status = status
@@ -653,7 +746,7 @@ def _generate_camera():
         
         # Hair detection overlay (from cached results)
         current_count = 0
-        if _hair_detection_enabled:
+        if _hair_detection_enabled and _hair_detection_overlay_enabled:
             with _inference_lock:
                 cache = _inference_cache
             
@@ -721,6 +814,11 @@ def root():
 @app.get("/hk_full_app_check.html")
 def full_app_check_page():
     return FileResponse(APP_DIR / "hk_full_app_check.html")
+
+
+@app.get("/hk_treatment_app_portrait.html")
+def treatment_app_portrait_page():
+    return FileResponse(APP_DIR / "hk_treatment_app_portrait.html")
 
 
 def _parse_preflight_output(output: str) -> list[dict]:
@@ -1128,6 +1226,13 @@ def app_reset():
     return {"response": _laser.app_reset()}
 
 
+@app.post("/startup/clean_state")
+def clean_startup_state():
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    return _clean_microcontroller_start_state("frontend_startup")
+
+
 @app.get("/app/proc_time")
 def get_app_proc_time():
     if _laser is None:
@@ -1281,6 +1386,8 @@ def _treatment_safety_snapshot(require_vacuum: bool = True):
         )
 
     if not any(int(value) > 0 for value in _laser.channel_power):
+        _laser.get_channel_power()
+    if not any(int(value) > 0 for value in _laser.channel_power):
         return None, JSONResponse(
             status_code=409,
             content={"error": "Laser channel power is not set"},
@@ -1320,9 +1427,9 @@ def _treatment_safety_snapshot(require_vacuum: bool = True):
     }, None
 
 
-def _capture_and_load_treatment_targets(mode_value: int):
+def _capture_and_load_treatment_targets(mode_value: int, prefer_cache: bool = False):
     global _treatment_highlight_image_points
-    capture = _capture_detections_now()
+    capture = _capture_detections_now(prefer_cache=prefer_cache)
     if isinstance(capture, JSONResponse):
         return None, capture
     _treatment_highlight_image_points = list(_detected_points)
@@ -1474,6 +1581,8 @@ def treatment_next():
             _set_treatment_status("BLOCKED", "Laser must be ARMED before manual NEXT")
             return JSONResponse(status_code=409, content={"error": "Laser must be ARMED before manual NEXT"})
         if not any(int(value) > 0 for value in _laser.channel_power):
+            _laser.get_channel_power()
+        if not any(int(value) > 0 for value in _laser.channel_power):
             _set_treatment_status("BLOCKED", "Laser channel power is not set")
             return JSONResponse(status_code=409, content={"error": "Laser channel power is not set"})
 
@@ -1520,6 +1629,175 @@ def stop_treatment():
         _treatment_manual_remaining = 0
         _set_treatment_status("STOPPED")
     return {"response": resp, **get_treatment_status()}
+
+
+def _treatment_app_status() -> dict:
+    app_state = None if _laser is None else _laser.get_app_state()
+    app_last_error = None if _laser is None else _laser.get_app_last_error()
+    arm_response = None if _laser is None else _laser.get_arm_enabled()
+    target_state = None if _target is None else _target.get_state()
+    target_last_error = None if _target is None else _target.get_last_error()
+    vacuum_status = None if _vacuum is None else _vacuum.get_status()
+
+    return {
+        **get_treatment_status(),
+        "app_state": app_state,
+        "app_state_running": _app_state_is_running(app_state),
+        "app_last_error": app_last_error,
+        "target_state": target_state,
+        "target_last_error": target_last_error,
+        "target_error_clear": _target is None or _target_error_is_clear(target_last_error),
+        "laser_armed": _parse_firmware_bool(arm_response),
+        "laser_arm": arm_response,
+        "laser_power": None if _laser is None else {
+            "p808": int(_laser.channel_power[0]),
+            "p980": int(_laser.channel_power[1]),
+            "p1064": int(_laser.channel_power[2]),
+        },
+        "pulse_ms": None if _target is None else int(_target.pulse_ms),
+        "detection_enabled": _hair_detection_enabled,
+        "hair_detection_overlay_enabled": _hair_detection_overlay_enabled,
+        "detection_conf": _detection_conf,
+        "detection_count": _last_detection_count,
+        "loaded_targets": 0 if _target is None else _target.get_target_count(),
+        "vacuum": vacuum_status,
+    }
+
+
+@app.get("/treatment/app/status")
+def get_treatment_app_status():
+    _drain_async_messages()
+    return _treatment_app_status()
+
+
+@app.post("/treatment/app/mode")
+def set_treatment_app_mode(mode: str = Query(...)):
+    return set_treatment_mode(mode)
+
+
+@app.post("/treatment/app/detect")
+def treatment_app_detect():
+    global _show_target_points_overlay, _treatment_running, _treatment_manual_remaining
+    mode = _treatment_mode
+    if mode == "auto":
+        return JSONResponse(
+            status_code=409,
+            content={"error": "AUTO mode detects and fires automatically when vacuum is ON"},
+        )
+
+    mode_value = TargetInterface.MODE_MANUAL if mode == "manual" else TargetInterface.MODE_AUTO
+    with _treatment_lock:
+        loaded, error_response = _capture_and_load_treatment_targets(mode_value, prefer_cache=True)
+        if error_response is not None:
+            _set_treatment_status("ERROR", error_response.body.decode("utf-8"))
+            return error_response
+
+        _show_target_points_overlay = True
+        if mode == "manual":
+            _treatment_running = True
+            _treatment_manual_remaining = int(loaded["targets_count"])
+            _set_treatment_status("READY_FOR_NEXT", result=loaded)
+        else:
+            _treatment_running = False
+            _treatment_manual_remaining = 0
+            _set_treatment_status("TARGETS_READY", result=loaded)
+
+        return {
+            **loaded,
+            "mode": mode,
+            "status": _treatment_last_status,
+            "manual_remaining": _treatment_manual_remaining,
+            "loaded_targets": _target.get_target_count(),
+            "show_target_points_overlay": _show_target_points_overlay,
+        }
+
+
+@app.post("/treatment/app/fire")
+def treatment_app_fire():
+    if _treatment_mode == "auto":
+        return JSONResponse(
+            status_code=409,
+            content={"error": "AUTO mode fires automatically when vacuum is ON"},
+        )
+    if _treatment_mode == "manual":
+        return treatment_app_next()
+
+    if _target is None:
+        return JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
+    if _target.get_target_count() <= 0:
+        return JSONResponse(status_code=409, content={"error": "Run DETECT before FIRE"})
+
+    safety, error_response = _treatment_safety_snapshot(require_vacuum=True)
+    if error_response is not None:
+        _set_treatment_status("BLOCKED", error_response.body.decode("utf-8"))
+        return error_response
+
+    with _treatment_lock:
+        start_resp = _target.start_seq()
+        _set_treatment_status("SHOOTING", result={"response": start_resp, "safety": safety})
+        return {
+            "response": start_resp,
+            "safety": safety,
+            "mode": _treatment_mode,
+            "status": _treatment_last_status,
+            "loaded_targets": _target.get_target_count(),
+        }
+
+
+@app.post("/treatment/app/next")
+def treatment_app_next():
+    result = treatment_next()
+    if isinstance(result, JSONResponse):
+        return result
+    return {**result, "mode": _treatment_mode, "status": _treatment_last_status}
+
+
+@app.post("/treatment/app/emergency_stop")
+def treatment_app_emergency_stop():
+    global _treatment_running, _treatment_manual_remaining, _walking
+    responses = {}
+    _walking = False
+    with _treatment_lock:
+        if _target is not None:
+            responses["target_halt"] = _target.halt_seq()
+            responses["target_stop"] = _target.stop_seq()
+        if _laser is not None:
+            responses["laser_stop"] = _laser.stop()
+            responses["laser_disarm"] = _laser.disarm_laser()
+        if _vacuum is not None:
+            responses["vacuum_off"] = _vacuum.vacuum_off()
+        _treatment_running = False
+        _treatment_manual_remaining = 0
+        _set_treatment_status("EMERGENCY_STOPPED")
+    responses["cleanup"] = _clean_microcontroller_start_state("emergency_stop")
+    return {"response": responses, **_treatment_app_status()}
+
+
+@app.post("/treatment/app/settings")
+def set_treatment_app_settings(
+    p808: int = Query(...),
+    p980: int = Query(...),
+    p1064: int = Query(...),
+    pulse_ms: int = Query(...),
+):
+    if _laser is None:
+        return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
+    if _target is None:
+        return JSONResponse(status_code=500, content={"error": "Target controller unavailable"})
+    power_resp = _laser.set_channel_power(p808, p980, p1064)
+    pulse_resp = _target.set_las_pulse(pulse_ms)
+    reload_resp = _reload_loaded_targets_into_controller()
+    return {
+        "response": {"power": power_resp, "pulse": pulse_resp, "targets": reload_resp},
+        "targets_reloaded": bool(_target.targets),
+        "laser_power": {
+            "p808": int(_laser.channel_power[0]),
+            "p980": int(_laser.channel_power[1]),
+            "p1064": int(_laser.channel_power[2]),
+        },
+        "pulse_ms": int(_target.pulse_ms),
+        "loaded_targets": _target.get_target_count(),
+    }
 
 
 @app.get("/seq/status")
@@ -1638,6 +1916,7 @@ def get_detection_status():
     return {
         "detection_enabled": _hair_detection_enabled or _calibration_detection_enabled,
         "hair_detection_enabled": _hair_detection_enabled,
+        "hair_detection_overlay_enabled": _hair_detection_overlay_enabled,
         "conf": _detection_conf,
         "red_dot": _red_dot_enabled,
         "mask_overlay_enabled": _mask_overlay_enabled,
@@ -1666,6 +1945,13 @@ def set_mask_overlay(enabled: bool = Query(...)):
     global _mask_overlay_enabled
     _mask_overlay_enabled = enabled
     return {"mask_overlay_enabled": _mask_overlay_enabled}
+
+
+@app.post("/detection/live_overlay")
+def set_live_detection_overlay(enabled: bool = Query(...)):
+    global _hair_detection_overlay_enabled
+    _hair_detection_overlay_enabled = bool(enabled)
+    return {"hair_detection_overlay_enabled": _hair_detection_overlay_enabled}
 
 
 @app.get("/detection/hsv")
@@ -1761,18 +2047,32 @@ def sse_dot():
 
 @app.post("/detection/conf")
 def set_detection_conf(conf: float = Query(...)):
-    global _detection_conf
+    global _detection_conf, _inference_cache
     try:
         conf_val = float(conf)
         conf_val = max(0.01, min(1.0, conf_val))
         _detection_conf = conf_val
+        with _inference_lock:
+            _inference_cache = None
         return {"conf": _detection_conf}
     except Exception as e:
         return JSONResponse(status_code=400, content={"error": str(e)})
 
 
-def _capture_detections_now():
+def _capture_detections_now(prefer_cache: bool = False):
     global _detected_points
+    if prefer_cache and _hair_detection_enabled:
+        with _inference_lock:
+            cache = _inference_cache
+        if cache is not None:
+            centers = cache.get("centers") or []
+            _detected_points = [(int(cx), int(cy)) for cx, cy in centers]
+            return {
+                "captured": len(_detected_points),
+                "points": _detected_points,
+                "source": "live_cache",
+            }
+
     if _detector is None:
         return JSONResponse(status_code=500, content={"error": "Detector unavailable"})
     if _ensure_camera() is None:

@@ -269,6 +269,17 @@ sudo systemctl status hairkiller-backend
 sudo journalctl -u hairkiller-backend -f
 ```
 
+## RUN test frontend as a service
+
+Install test frontend:
+
+```bash
+sudo cp -r ../hairkiller/app/* /var/www/test-frontend
+sudo cp deploy/test-frontend.nginx /etc/nginx/sites-available/test-frontend
+sudo ln -s /etc/nginx/sites-available/test-frontend /etc/nginx/sites-enabled/test-frontend
+sudo nginx -t
+sudo systemctl reload nginx
+
 ### Serial Port Setup
 
 To access the laser device on `/dev/ttyACM0`, run the setup script from the hairkiller project:

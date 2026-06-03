@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Callable, Dict, Optional, Tuple
 
 from serial_devices_handler import SerialDevice, DEFAULT_PORT, DEFAULT_BAUD
@@ -97,6 +98,9 @@ class TargetInterface:
     def get_last_error(self):
         return self._send("TARGET_GET_LAST_ERROR")
 
+    def clear_error(self):
+        return self._send("TARGET_CLEAR_ERROR")
+
     def clear_targets(self):
         self.targets = {}
         return self._send("TARGET_CLEAR_TARGETS")
@@ -118,8 +122,8 @@ class TargetInterface:
         # Bulk target loading sends one serial command per target. The default
         # read window is intentionally longer for interactive commands, but it
         # makes this path scale poorly with many targets.
-        load_wait_s = 0.01
-        load_read_window_s = 0.03
+        load_wait_s = float(os.getenv("HK_TARGET_LOAD_WAIT_S", "0.002"))
+        load_read_window_s = float(os.getenv("HK_TARGET_LOAD_READ_WINDOW_S", "0.008"))
 
         # clear and load new targets
         self._send("TARGET_CLEAR_TARGETS", wait_s=load_wait_s, extra_read_window_s=load_read_window_s)

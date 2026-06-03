@@ -65,6 +65,7 @@ _mover_pos = [3000, 3000]
 _red_dot_enabled = False
 _armed = False
 _laser_active = False
+_hair_detection_overlay_enabled = True
 _vacuum_on = False
 _vacuum_check_on = False
 _channel_power = {"p808": 20, "p980": 25, "p1064": 50}
@@ -73,6 +74,10 @@ _pulse_ms = 50
 _pending_sync = False
 _sequence_mode = "MANUAL"
 _sequence_state = "IDLE"
+_treatment_mode = "semi_auto"
+_treatment_status = "IDLE"
+_treatment_manual_remaining = 0
+_treatment_auto_vacuum_cycle_done = False
 _frame_stride = 2
 _show_target_points_overlay = False
 _targets: dict[int, list[int]] = {}
@@ -275,6 +280,11 @@ def root():
     return FileResponse(ROOT / "app" / "hk_full_app.html")
 
 
+@app.get("/hk_treatment_app_portrait.html")
+def treatment_app_portrait_page():
+    return FileResponse(ROOT / "app" / "hk_treatment_app_portrait.html")
+
+
 @app.get("/health")
 def health():
     return {
@@ -322,6 +332,7 @@ def stats():
         "detection_enabled": _detection_enabled,
         "detection_count": _last_detection_count,
         "calibration_detection_enabled": _calibration_detection_enabled,
+        "hair_detection_overlay_enabled": _hair_detection_overlay_enabled,
         "mask_overlay_enabled": _mask_overlay_enabled,
         "red_dot_enabled": _red_dot_enabled,
         "homography_loaded": True,
@@ -581,6 +592,238 @@ def clear_app_last_error():
     return {"response": _ok("APP_CLEAR_ERROR")}
 
 
+@app.post("/startup/clean_state")
+def clean_startup_state():
+    global _detection_enabled, _calibration_detection_enabled, _red_dot_enabled, _armed
+    global _hair_detection_overlay_enabled
+    global _laser_active, _show_target_points_overlay, _targets, _detected_points
+    global _sequence_state, _treatment_status, _treatment_manual_remaining
+
+    _detection_enabled = False
+    _calibration_detection_enabled = False
+    _hair_detection_overlay_enabled = False
+    _red_dot_enabled = False
+    _armed = False
+    _laser_active = False
+    _show_target_points_overlay = False
+    _targets = {}
+    _detected_points = []
+    _sequence_state = "IDLE"
+    _treatment_status = "IDLE"
+    _treatment_manual_remaining = 0
+    _app_error_events.clear()
+    _sequence_events.clear()
+
+    return {
+        "ok": True,
+        "source": "frontend_startup",
+        "app_state_running": True,
+        "target_error_clear": True,
+        "laser_armed": False,
+        "detection_enabled": False,
+        "hair_detection_overlay_enabled": False,
+        "responses": {
+            "app_state_before": _ok("APP_GET_STATE", "RUNNING"),
+            "laser_disarm": _ok_arg("LASER_SET_ARM_EN", "0"),
+            "target_clear_error": _ok("TARGET_CLEAR_ERROR"),
+            "target_clear_targets": _ok("TARGET_CLEAR_TARGETS"),
+            "app_state_after": _ok("APP_GET_STATE", "RUNNING"),
+            "app_last_error": _ok("APP_GET_LAST_ERROR", "No error,APP_ERROR_NONE"),
+        },
+    }
+
+
+def _mock_treatment_status() -> dict[str, Any]:
+    global _treatment_auto_vacuum_cycle_done, _treatment_status, _sequence_state
+    if _treatment_mode == "auto" and _vacuum_on and not _treatment_auto_vacuum_cycle_done:
+        points = _mock_points()
+        _load_targets_from_points(points[:MAX_SEQUENCE_TARGETS])
+        _sequence_state = "IDLE"
+        _append_sequence_event("OK")
+        _treatment_status = "SHOOTING"
+        _treatment_auto_vacuum_cycle_done = True
+    if _treatment_mode == "auto" and not _vacuum_on:
+        _treatment_auto_vacuum_cycle_done = False
+
+    return {
+        "mode": _treatment_mode,
+        "running": _treatment_status in {"READY_FOR_NEXT", "SHOOTING"},
+        "status": _treatment_status,
+        "last_error": None,
+        "manual_remaining": _treatment_manual_remaining,
+        "auto_vacuum_cycle_done": _treatment_auto_vacuum_cycle_done,
+        "show_target_points_overlay": _show_target_points_overlay,
+        "targets_count": _target_count(),
+        "loaded_targets": _target_count(),
+        "app_state": _ok("APP_GET_STATE", "APP_STATE_RUNNING"),
+        "app_state_running": True,
+        "app_last_error": _ok("APP_GET_LAST_ERROR", "No error,APP_ERROR_NONE"),
+        "target_state": _ok("TARGET_GET_STATE", f"TARGET_STATE_{_sequence_state}"),
+        "target_last_error": _ok("TARGET_GET_LAST_ERROR", "No error,TARGET_ERROR_NONE"),
+        "target_error_clear": True,
+        "laser_armed": _armed,
+        "laser_arm": _ok("LASER_GET_ARM_EN", _bool_str(_armed)),
+        "laser_power": dict(_channel_power),
+        "pulse_ms": _pulse_ms,
+        "detection_enabled": _detection_enabled,
+        "hair_detection_overlay_enabled": _hair_detection_overlay_enabled,
+        "detection_conf": _detection_conf,
+        "detection_count": _last_detection_count,
+        "vacuum": get_vacuum_status(),
+    }
+
+
+@app.get("/treatment/status")
+def get_treatment_status():
+    return _mock_treatment_status()
+
+
+@app.get("/treatment/app/status")
+def get_treatment_app_status():
+    return _mock_treatment_status()
+
+
+@app.post("/treatment/mode")
+def set_treatment_mode(mode: str = Query(...)):
+    return set_treatment_app_mode(mode)
+
+
+@app.post("/treatment/app/mode")
+def set_treatment_app_mode(mode: str = Query(...)):
+    global _treatment_mode, _treatment_status, _treatment_manual_remaining, _treatment_auto_vacuum_cycle_done
+    normalized = str(mode or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if normalized in {"semi", "semi_auto", "semiauto"}:
+        _treatment_mode = "semi_auto"
+    elif normalized in {"manual"}:
+        _treatment_mode = "manual"
+    elif normalized in {"auto", "automatic"}:
+        _treatment_mode = "auto"
+    else:
+        return JSONResponse(status_code=400, content={"error": f"Unsupported treatment mode: {mode}"})
+    _treatment_status = "IDLE"
+    _treatment_manual_remaining = 0
+    _treatment_auto_vacuum_cycle_done = False
+    return _mock_treatment_status()
+
+
+@app.post("/treatment/app/detect")
+def treatment_app_detect():
+    global _detected_points, _last_detection_count, _show_target_points_overlay
+    global _treatment_status, _treatment_manual_remaining
+    if _treatment_mode == "auto":
+        return JSONResponse(status_code=409, content={"error": "AUTO mode detects and fires automatically when vacuum is ON"})
+    _detected_points = _mock_points()
+    _last_detection_count = len(_detected_points)
+    resp = _load_targets_from_points(_detected_points[:MAX_SEQUENCE_TARGETS])
+    _show_target_points_overlay = True
+    if _treatment_mode == "manual":
+        _treatment_manual_remaining = _target_count()
+        _treatment_status = "READY_FOR_NEXT"
+    else:
+        _treatment_manual_remaining = 0
+        _treatment_status = "TARGETS_READY"
+    return {
+        "response": resp,
+        "targets_count": _target_count(),
+        "detected_count": len(_detected_points),
+        "max_targets": MAX_SEQUENCE_TARGETS,
+        "truncated": False,
+        "targets": [xy for _, xy in sorted(_targets.items())],
+        "mode": _treatment_mode,
+        "status": _treatment_status,
+        "manual_remaining": _treatment_manual_remaining,
+        "loaded_targets": _target_count(),
+        "show_target_points_overlay": _show_target_points_overlay,
+    }
+
+
+@app.post("/treatment/app/fire")
+def treatment_app_fire():
+    global _sequence_state, _treatment_status, _treatment_manual_remaining
+    if _treatment_mode == "auto":
+        return JSONResponse(status_code=409, content={"error": "AUTO mode fires automatically when vacuum is ON"})
+    if _treatment_mode == "manual":
+        return treatment_app_next()
+    if _target_count() <= 0:
+        return JSONResponse(status_code=409, content={"error": "Run DETECT before FIRE"})
+    if not _vacuum_on:
+        return JSONResponse(status_code=409, content={"error": "Vacuum must be ON before treatment"})
+    if not _armed:
+        return JSONResponse(status_code=409, content={"error": "Laser must be ARMED before treatment"})
+    _sequence_state = "IDLE"
+    _treatment_status = "SHOOTING"
+    _append_sequence_event("OK")
+    return {"response": _ok("TARGET_START"), "mode": _treatment_mode, "status": _treatment_status, "loaded_targets": _target_count()}
+
+
+@app.post("/treatment/app/next")
+def treatment_app_next():
+    global _treatment_manual_remaining, _treatment_status, _sequence_state
+    if _treatment_mode != "manual":
+        return JSONResponse(status_code=409, content={"error": "NEXT is only available in MANUAL treatment mode"})
+    if _treatment_manual_remaining <= 0:
+        return JSONResponse(status_code=409, content={"error": "No manual treatment targets are waiting"})
+    if not _vacuum_on:
+        return JSONResponse(status_code=409, content={"error": "Vacuum must be ON before manual NEXT"})
+    if not _armed:
+        return JSONResponse(status_code=409, content={"error": "Laser must be ARMED before manual NEXT"})
+    _treatment_manual_remaining = max(0, _treatment_manual_remaining - 1)
+    _treatment_status = "DONE" if _treatment_manual_remaining == 0 else "READY_FOR_NEXT"
+    _sequence_state = "IDLE"
+    _append_sequence_event("OK")
+    return {"response": _ok("TARGET_START"), "manual_remaining": _treatment_manual_remaining, "mode": _treatment_mode, "status": _treatment_status, "loaded_targets": _target_count()}
+
+
+@app.post("/treatment/app/emergency_stop")
+def treatment_app_emergency_stop():
+    global _armed, _laser_active, _sequence_state, _treatment_status, _treatment_manual_remaining, _vacuum_on
+    _armed = False
+    _laser_active = False
+    _vacuum_on = False
+    _sequence_state = "STOPPED"
+    _treatment_status = "EMERGENCY_STOPPED"
+    _treatment_manual_remaining = 0
+    cleanup = clean_startup_state()
+    return {
+        "response": {
+            "target_halt": _ok("TARGET_HALT"),
+            "target_stop": _ok("TARGET_STOP"),
+            "laser_stop": _ok("LASER_STOP"),
+            "laser_disarm": _ok_arg("LASER_SET_ARM_EN", "0"),
+            "vacuum_off": _ok_arg("APP_SET_VACUUM_EN", "0"),
+            "cleanup": cleanup,
+        },
+        **_mock_treatment_status(),
+    }
+
+
+@app.post("/treatment/app/settings")
+def set_treatment_app_settings(
+    p808: int = Query(...),
+    p980: int = Query(...),
+    p1064: int = Query(...),
+    pulse_ms: int = Query(...),
+):
+    global _pulse_ms
+    _channel_power.update({
+        "p808": _clamp_int(p808, 0, 100),
+        "p980": _clamp_int(p980, 0, 100),
+        "p1064": _clamp_int(p1064, 0, 100),
+    })
+    _pulse_ms = _clamp_int(pulse_ms, 10, 1000)
+    return {
+        "response": {
+            "power": _ok_arg("LASER_SET_CHANNEL_PWR", f"{_channel_power['p808']},{_channel_power['p980']},{_channel_power['p1064']}"),
+            "pulse": [f"PULSE_MS={_pulse_ms}"],
+            "targets": [f"TARGET_COUNT={_target_count()}"],
+        },
+        "targets_reloaded": _target_count() > 0,
+        "laser_power": dict(_channel_power),
+        "pulse_ms": _pulse_ms,
+        "loaded_targets": _target_count(),
+    }
+
+
 @app.post("/app/raw_command")
 def app_raw_command(payload: RawCommandRequest):
     command = str(payload.command).strip()
@@ -701,6 +944,7 @@ def get_detection_status():
     return {
         "detection_enabled": _detection_enabled or _calibration_detection_enabled,
         "hair_detection_enabled": _detection_enabled,
+        "hair_detection_overlay_enabled": _hair_detection_overlay_enabled,
         "conf": _detection_conf,
         "red_dot": _red_dot_enabled,
         "mask_overlay_enabled": _mask_overlay_enabled,
@@ -724,6 +968,13 @@ def set_mask_overlay(enabled: bool = Query(...)):
     global _mask_overlay_enabled
     _mask_overlay_enabled = enabled
     return {"mask_overlay_enabled": _mask_overlay_enabled}
+
+
+@app.post("/detection/live_overlay")
+def set_live_detection_overlay(enabled: bool = Query(...)):
+    global _hair_detection_overlay_enabled
+    _hair_detection_overlay_enabled = bool(enabled)
+    return {"hair_detection_overlay_enabled": _hair_detection_overlay_enabled}
 
 
 @app.get("/detection/hsv")

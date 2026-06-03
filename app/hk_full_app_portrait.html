@@ -1596,6 +1596,27 @@
       }
       return data;
     }
+
+    async function cleanStartupState() {
+      updateLog('Cleaning controller startup state...');
+      const data = await fetchJson('/startup/clean_state', {method: 'POST'});
+      detectionOn = false;
+      isLaserArmed = false;
+      showTargetPointsOverlay = false;
+      loadedTargetCount = 0;
+      freshTargetsReadyForShootAll = false;
+      treatmentManualRemaining = 0;
+      treatmentStatusText = 'IDLE';
+      syncDetectionToggleInputs(false);
+      updateTargetCountDisplays(0);
+      updateTargetPointsOverlayButton();
+      refreshShootAllAvailability();
+      updateLog(
+        `Startup state clean: APP_STATE ${data.app_state_running ? 'RUNNING' : 'not RUNNING'}; ` +
+        `target errors ${data.target_error_clear ? 'clear' : 'not clear'}; laser disarmed; detection off`
+      );
+      return data;
+    }
     
     // ==================== Galvo ====================
     async function updateGalvoDisplay() {
@@ -2491,6 +2512,7 @@
       // Connect SSE for live detection count
       connectDetectionSSE();
       await loadCommandCatalog();
+      await cleanStartupState();
       await setTargetMode('auto');
       await refreshDetectionStatus(true);
       updateWavelengthHighlights();
