@@ -1,4 +1,5 @@
 import sys
+from pathlib import Path
 import torch
 from ultralytics import YOLO
 import cv2
@@ -10,7 +11,7 @@ from detection_utils import remove_overlapping_boxes, calculate_box_center, get_
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
-def preprocess_tiles(tiles):
+def preprocess_tiles(tiles, device="cuda"):
     """Resize and convert tiles to torch tensors (BGR->RGB)."""
     tensor_tiles = []
     for tile in tiles:
@@ -18,16 +19,17 @@ def preprocess_tiles(tiles):
         tile = cv2.cvtColor(tile, cv2.COLOR_BGR2RGB)
         tile_tensor = torch.from_numpy(tile).permute(2, 0, 1).float() / 255.0
         tensor_tiles.append(tile_tensor)
-    batch_tensor = torch.stack(tensor_tiles).to("cuda")
+    batch_tensor = torch.stack(tensor_tiles).to(device)
     return batch_tensor
 
 class ObjectDetector:
         def __init__(self, model_path, device="cuda"):
             self.model_path=model_path
+            if device == "cuda" and not torch.cuda.is_available():
+                raise RuntimeError("CUDA requested for YOLO detector, but torch.cuda.is_available() is false")
             self.model = YOLO(self.model_path)
-            if device == "cuda" and torch.cuda.is_available():
-                self.model.to(device)
             self.device = device
+            self.model.to(self.device)
 
         def simple_inference(self, image, conf=0.05):
             # Run inference on a single image, resolution is 640x640
@@ -44,7 +46,7 @@ class ObjectDetector:
             #logging.info(f"Split into {len(tiles)} tiles.")
 
             # --- Preprocess tiles into batch tensor ---
-            tile_batch = preprocess_tiles(tiles)
+            tile_batch = preprocess_tiles(tiles, device=self.device)
 
             # --- Inference in batch ---
             with torch.no_grad():
@@ -69,9 +71,9 @@ class ObjectDetector:
 def main():
     # --- Load TensorRT YOLO model ---
 
-    model_path = "./model/follicle_exit_v11i_yolov8n_20250513.pt"
+    model_path = Path(__file__).resolve().parent.parent / "model" / "follicle_exit_v11i_yolov8n_20250513.pt"
 
-    detector = ObjectDetector(model_path)
+    detector = ObjectDetector(str(model_path))
 
     # --- Load and split full image ---
     image_path = "./images/hair_test_live_2.jpg"
@@ -114,4 +116,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-        

@@ -4,13 +4,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 import numpy as np
 import cv2
-from sklearn.linear_model import LinearRegression
 import json
-import matplotlib.pyplot as plt
-
-
-import numpy as np
-import cv2
 
 def calculate_homography(image_points, mover_points):
     """
@@ -68,6 +62,7 @@ def read_corresponding_points(filename='saved_coordinates.json'):
     return image_points, mover_points
 
 def main():
+    import matplotlib.pyplot as plt
 
     # Collect calibration data
     image_points, mover_points = read_corresponding_points(filename='saved_coordinates.json')

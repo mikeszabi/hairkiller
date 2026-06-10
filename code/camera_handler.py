@@ -27,7 +27,7 @@ WHITE_BALANCE = 3000
 
 MAX_FAILS = 10          # ennyi egymás utáni read fail után restart
 BACKOFF = 1.0           # restart előtt várakozás
-WARMUP = 10
+WARMUP = int(os.getenv("HK_CAMERA_WARMUP_FRAMES", "0"))
 
 # def find_cameras(max_index=2):
 #     """Return a list of camera device indices that can be opened."""
@@ -77,8 +77,8 @@ def open_cam(
     #cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)   # 1 = manual (UVC standard)
     #cap.set(cv2.CAP_PROP_EXPOSURE, EXPOSURE) # tune via EXPOSURE constant above
 
-    for _ in range(WARMUP):
-        cap.read()
+    for _ in range(max(0, WARMUP)):
+        cap.grab()
 
     w = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
     h = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)

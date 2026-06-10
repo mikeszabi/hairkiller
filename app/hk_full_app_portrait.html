@@ -2512,7 +2512,6 @@
       // Connect SSE for live detection count
       connectDetectionSSE();
       await loadCommandCatalog();
-      await cleanStartupState();
       await setTargetMode('auto');
       await refreshDetectionStatus(true);
       updateWavelengthHighlights();

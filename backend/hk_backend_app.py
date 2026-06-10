@@ -360,12 +360,8 @@ def _benchmark_latency(samples: int) -> dict:
         "settings": uvc.get_settings(),
     }
 
-_detector = None
-try:
-    _detector = ObjectDetector("./model/follicle_exit_v11i_yolov8n_20250513.pt", device="cuda")
-    print("[DETECTOR] Initialized", flush=True)
-except Exception as e:
-    print(f"[DETECTOR] Failed: {e}", flush=True)
+_detector = ObjectDetector(str(ROOT / "model" / "follicle_exit_v11i_yolov8n_20250513.pt"), device="cuda")
+print("[DETECTOR] Initialized on CUDA", flush=True)
 
 try:
     _homography = read_transformation_from_file()
