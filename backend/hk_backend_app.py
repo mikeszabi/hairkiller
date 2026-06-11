@@ -24,7 +24,7 @@ from detection_utils import detect_red_dot, remove_overlapping_boxes, get_box_ce
 from galvo_handler import GalvoInterface
 from laser_handler import LaserInterface
 from vacuum_handler import VacuumInterface
-from serial_commands import COMMANDS
+from serial_commands import COMMANDS, response_data_tokens
 from target_handler import TargetInterface
 from api_prefix import install_api_prefix
 from calibration_utils import (
@@ -457,16 +457,16 @@ def _response_has_nok(response) -> bool:
     return "NOK" in text or "ERROR:" in text
 
 
+def _firmware_data_tokens(response) -> list[str]:
+    return response_data_tokens(response)
+
+
 def _parse_firmware_bool(response):
-    text = _response_text(response)
-    match = re.search(r"->\[(.*?)\]", text)
-    if not match:
-        return None
-    value = match.group(1).strip()
-    if value == "1":
-        return True
-    if value == "0":
-        return False
+    for value in _firmware_data_tokens(response):
+        if value == "1":
+            return True
+        if value == "0":
+            return False
     return None
 
 
@@ -592,7 +592,8 @@ def _parse_channel_power_response(lines):
         text = str(line).strip()
         if "->" not in text:
             continue
-        payload = text.split("->", 1)[1].strip().strip("[]")
+        payload_tokens = [token for token in _firmware_data_tokens([line]) if "," in token]
+        payload = payload_tokens[0] if payload_tokens else text.split("->", 1)[1].strip().strip("[]")
         parts = [part.strip() for part in payload.split(",")]
         if len(parts) < 3:
             continue
@@ -1313,21 +1314,21 @@ def app_raw_command(payload: RawCommandRequest):
 def vacuum_on():
     if _vacuum is None:
         return JSONResponse(status_code=500, content={"error": "Vacuum controller unavailable"})
-    return {"response": _vacuum.vacuum_on()}
+    return {"response": _vacuum.vacuum_on(), "vacuum_on": True}
 
 
 @app.post("/vacuum/off")
 def vacuum_off():
     if _vacuum is None:
         return JSONResponse(status_code=500, content={"error": "Vacuum controller unavailable"})
-    return {"response": _vacuum.vacuum_off()}
+    return {"response": _vacuum.vacuum_off(), "vacuum_on": False}
 
 
 @app.post("/vacuum/check")
 def set_vacuum_check_enabled(enabled: bool = Query(...)):
     if _vacuum is None:
         return JSONResponse(status_code=500, content={"error": "Vacuum controller unavailable"})
-    return {"response": _vacuum.set_check_vacuum(enabled)}
+    return {"response": _vacuum.set_check_vacuum(enabled), "check_vacuum_enabled": bool(enabled)}
 
 
 @app.get("/vacuum/check")
@@ -2287,7 +2288,8 @@ def set_laser_arm_enabled(enabled: bool = Query(...)):
         peltier = _prepare_peltier_for_arming()
 
     resp = _laser.set_arm_enabled(enabled)
-    return {"response": resp, "enabled": enabled, "peltier": peltier}
+    armed = bool(enabled) if not _response_has_nok(resp) else not bool(enabled)
+    return {"response": resp, "enabled": armed, "laser_armed": armed, "peltier": peltier}
 
 
 @app.get("/laser/arm_en")
@@ -2304,7 +2306,8 @@ def arm_laser():
         return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
     peltier = _prepare_peltier_for_arming()
     resp = _laser.arm_laser()
-    return {"response": resp, "peltier": peltier}
+    armed = not _response_has_nok(resp)
+    return {"response": resp, "enabled": armed, "laser_armed": armed, "peltier": peltier}
 
 
 @app.post("/laser/disarm")
@@ -2312,7 +2315,8 @@ def disarm_laser():
     if _laser is None:
         return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
     resp = _laser.disarm_laser()
-    return {"response": resp}
+    armed = _response_has_nok(resp)
+    return {"response": resp, "enabled": armed, "laser_armed": armed}
 
 
 @app.post("/laser/ack")
@@ -2519,9 +2523,13 @@ def update_laser_settings(settings: LaserSettingsRequest):
         responses["peltier"] = _prepare_peltier_for_arming()
         responses["arm"] = _laser.arm_laser()
 
+    arm_ok = "arm" not in responses or not _response_has_nok(responses["arm"])
+    armed = bool(settings.armed) if arm_ok else not bool(settings.armed)
+
     return {
         "response": responses,
-        "armed": bool(settings.armed),
+        "armed": armed,
+        "laser_armed": armed,
         "power": {
             "p808": int(_laser.channel_power[0]),
             "p980": int(_laser.channel_power[1]),

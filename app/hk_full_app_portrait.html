@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>HK Full Hair Removal App - Portrait</title>
+  <title>Hairkiller Controller - Portrait</title>
   <style>
     * { box-sizing: border-box; }
     body {
@@ -89,7 +89,7 @@
       border-radius: 3px;
     }
 
-    button, input[type=number], input[type=checkbox], input[type=range], label {
+    button, input[type=number], input[type=checkbox], input[type=range], label, select {
       margin: 2px 1px;
       padding: 4px 6px;
       font-size: 11px;
@@ -108,6 +108,7 @@
     input[type=range] { width: 50px; vertical-align: middle; }
     input[type=number] { width: 50px; padding: 3px; }
     input[type=text] { width: 100%; padding: 4px 6px; }
+    select { cursor: pointer; }
 
     .info-line {
       margin: 3px 0;
@@ -253,6 +254,17 @@
       z-index: 20;
     }
 
+    #section-log .section-body {
+      display: block;
+      padding: 4px;
+    }
+
+    #section-log textarea {
+      height: 92px;
+      min-height: 92px;
+      max-height: 160px;
+    }
+
     .section-header {
       width: 100%;
       display: flex;
@@ -266,6 +278,14 @@
       font-size: 11px;
       font-weight: bold;
       cursor: pointer;
+    }
+
+    .static-header {
+      cursor: default;
+    }
+
+    .static-header:hover {
+      background: #2a2a2a;
     }
 
     .section-header:hover {
@@ -301,6 +321,54 @@
       grid-template-columns: 1fr 1fr;
       gap: 3px;
       margin: 4px 0;
+    }
+
+    .status-grid-wide {
+      grid-template-columns: 1fr;
+      gap: 5px;
+    }
+
+    .status-card {
+      min-height: 42px;
+      padding: 6px;
+      background: #242424;
+      border: 1px solid #4c4c4c;
+      border-radius: 4px;
+    }
+
+    .status-card span {
+      display: block;
+      color: #8cff8c;
+      font-size: 9px;
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+
+    .status-card strong {
+      display: block;
+      color: #eee;
+      font-family: monospace;
+      font-size: 10px;
+      line-height: 1.25;
+      word-break: break-word;
+      font-weight: normal;
+    }
+
+    .status-toolbar {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 4px;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .inline-toggle {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin: 0;
+      padding: 4px 6px;
+      white-space: nowrap;
     }
 
     .mono {
@@ -493,7 +561,7 @@
   </style>
 </head>
 <body>
-  <h1>🔴 Hair Removal System - Portrait</h1>
+  <h1>Hairkiller Controller</h1>
 
   <div id="container">
     <div id="video-section">
@@ -504,124 +572,48 @@
     </div>
 
     <div id="controls-section">
-      <!-- TREATMENT -->
-      <div class="section" id="section-treatment">
-        <button class="section-header" type="button" onclick="toggleSection('treatment')">
-          <span class="section-title">💥 TREATMENT</span>
-          <span class="section-chevron">▼</span>
-        </button>
-        <div class="section-body">
-        <div class="panel">
-        <div class="info-line">
-          <span class="info-label">Treatment Mode:</span>
-          <select id="treatmentModeSelect" onchange="setTreatmentMode(this.value)" style="width:100%;margin-top:4px;">
-            <option value="auto">AUTO</option>
-            <option value="semi_auto" selected>SEMI AUTO</option>
-            <option value="manual">MANUAL</option>
-          </select>
-        </div>
-        <div class="grid-2" style="margin-top: 6px;">
-          <button id="treatmentStartBtn" onclick="startTreatment()" class="small-btn success-btn emph-btn">START TREATMENT</button>
-          <button id="treatmentNextBtn" onclick="nextTreatmentTarget()" class="small-btn warning-btn emph-btn" disabled>NEXT</button>
-        </div>
-        <button id="treatmentStopBtn" onclick="stopTreatment()" class="small-btn danger-btn" style="width:100%; margin-top: 4px;">STOP TREATMENT</button>
-        <div class="info-line">
-          <span class="info-label">Treatment:</span> <span id="treatmentStatus" class="mono">IDLE</span>
-        </div>
-        <div class="info-line">
-          <span class="info-label">Manual Remaining:</span> <span id="treatmentManualRemaining" class="mono">0</span>
-        </div>
-        <div class="grid-2">
-          <button onclick="armLaser()" class="small-btn success-btn">ARM</button>
-          <button onclick="disarmLaser()" class="small-btn danger-btn">DISARM</button>
-        </div>
-        <label class="info-line" style="display:flex;align-items:center;gap:6px;margin-top:6px;">
-          <input id="treatArmed" type="checkbox">
-          <span class="info-label">Armed after settings update</span>
-        </label>
-        <div style="margin-top: 6px;">
-          <div class="control-row">
-            <label>
-              <input id="treatVacuumOn" type="checkbox" onchange="toggleVacuum('treat')">
-              <span class="info-label">Vacuum On/OFF</span>
-            </label>
-            <span id="treatVacuumOnBadge" class="status-badge status-idle">OFF</span>
-          </div>
-          <div class="control-row">
-            <label>
-              <input id="treatVacuumCheck" type="checkbox" onchange="toggleVacuumCheck('treat')">
-              <span class="info-label">Vacuum Check On/OFF</span>
-            </label>
-            <span id="treatVacuumCheckBadge" class="status-badge status-idle">OFF</span>
-          </div>
-        </div>
-        <div class="info-line">
-          <span class="info-label">Live Count:</span> <span id="treatLiveDetectionCount">0</span>
-        </div>
-        <div class="info-line">
-          <span class="info-label">Targets Ready:</span> <span id="treatTargetCount" class="mono">0</span>
-        </div>
-        <label>
-          <input id="treatDetectionToggle" type="checkbox" onchange="toggleDetection('treat')">
-          Detection On/OFF
-        </label>
-        <div style="margin-top:3px;">
-          <label class="info-label">Confidence:</label>
-          <input id="treatConfRange" type="range" min="0.01" max="1.0" step="0.01" value="0.10" onchange="onConfChange(this.value, 'treat')">
-          <span id="treatConfVal">0.10</span>
-        </div>
-
-        <div style="margin-top: 4px;">
-          <label class="info-label">Channel Current / Power (0-100):</label>
-          <div class="info-line">A wavelength is active when its current is not 0.</div>
-          <div class="wavelength-row">
-            <div class="wavelength-card" id="treatWave1064">
-              <label>
-                <span>1064nm</span>
-                <input id="treatP1064" type="number" min="0" max="100" value="0" oninput="updateWavelengthHighlights('treat')">
-              </label>
-            </div>
-            <div class="wavelength-card" id="treatWave980">
-              <label>
-                <span>980nm</span>
-                <input id="treatP980" type="number" min="0" max="100" value="0" oninput="updateWavelengthHighlights('treat')">
-              </label>
-            </div>
-            <div class="wavelength-card" id="treatWave808">
-              <label>
-                <span>808nm</span>
-                <input id="treatP808" type="number" min="0" max="100" value="0" oninput="updateWavelengthHighlights('treat')">
-              </label>
-            </div>
-          </div>
-        </div>
-
-        <div style="margin-top: 4px;">
-          <label class="info-label">Pulse Duration For Enabled Wavelengths (10-1000 ms):</label>
-          <input id="treatPulse" type="number" min="10" max="1000" value="100" style="width:100%; margin-top:3px;">
-        </div>
-
-        <div class="grid-2" style="margin-top: 6px;">
-          <button onclick="updateLaserSettingsFrom('treat')" class="small-btn success-btn">SET LASER</button>
-          <button onclick="detectHair()" class="small-btn warning-btn">DETECT HAIR ONLY</button>
-        </div>
-        <div class="info-line" style="font-size:9px;color:#aaa;">
-          START handles detection, target upload, and shooting according to the selected treatment mode.
-        </div>
-      </div>
-        </div>
-      </div>
-
       <!-- Status Log -->
-      <div class="section" id="section-log">
-        <button class="section-header" type="button" onclick="toggleSection('log')">
-          <span class="section-title">📋 LOG</span>
+      <div class="section always-open" id="section-log">
+        <div class="section-header static-header">
+          <span class="section-title">LOG</span>
+          <button type="button" class="small-btn" onclick="clearLog()">Clear</button>
+        </div>
+        <div class="section-body">
+          <textarea id="logArea" readonly></textarea>
+        </div>
+      </div>
+
+      <!-- CONTROLLER STATUS -->
+      <div class="section" id="section-status">
+        <button class="section-header" type="button" onclick="toggleSection('status')">
+          <span class="section-title">CONTROLLER STATUS</span>
           <span class="section-chevron">▼</span>
         </button>
         <div class="section-body">
-        <div class="panel">
-        <textarea id="logArea" readonly></textarea>
-      </div>
+          <div class="status-toolbar">
+            <button onclick="refreshControllerStatus(true)" class="small-btn success-btn">Query Status</button>
+            <label class="inline-toggle">
+              <input id="autoStatusRefresh" type="checkbox" onchange="onAutoStatusRefreshChange()">
+              Auto refresh
+            </label>
+            <select id="statusRefreshInterval" onchange="onAutoStatusRefreshChange()">
+              <option value="1000">1s</option>
+              <option value="2000" selected>2s</option>
+              <option value="5000">5s</option>
+            </select>
+          </div>
+          <div class="status-grid status-grid-wide">
+            <div class="status-card"><span>APP_GET_STATE</span><strong id="status_APP_GET_STATE">-</strong></div>
+            <div class="status-card"><span>LASER_GET_STATE</span><strong id="status_LASER_GET_STATE">-</strong></div>
+            <div class="status-card"><span>PELTIER_GET_STATE</span><strong id="status_PELTIER_GET_STATE">-</strong></div>
+            <div class="status-card"><span>TARGET_GET_STATE</span><strong id="status_TARGET_GET_STATE">-</strong></div>
+            <div class="status-card"><span>SENSORS_GET_STATE</span><strong id="status_SENSORS_GET_STATE">-</strong></div>
+            <div class="status-card"><span>APP_GET_FW_VERSION</span><strong id="status_APP_GET_FW_VERSION">-</strong></div>
+            <div class="status-card"><span>APP_GET_HW_VERSION</span><strong id="status_APP_GET_HW_VERSION">-</strong></div>
+          </div>
+          <div class="info-line">
+            <span class="info-label">Last status query:</span> <span id="statusLastRefresh" class="mono">never</span>
+          </div>
         </div>
       </div>
 
@@ -779,7 +771,7 @@
         <div class="grid-3">
           <button onclick="getTargetStatus()" class="small-btn">Target Status</button>
           <button onclick="stepTarget()" class="small-btn warning-btn emph-btn">STEP</button>
-          <button id="sequenceShootAllBtn" onclick="shootAll('sequence')" class="small-btn success-btn emph-btn">SHOOT ALL</button>
+          <button id="sequenceShootAllBtn" onclick="shootAll()" class="small-btn success-btn emph-btn">SHOOT ALL</button>
         </div>
         <div class="grid-2">
           <button onclick="haltSeq()" class="small-btn warning-btn emph-btn">HALT</button>
@@ -967,15 +959,23 @@
     let knownSequenceEventKeys = new Set();
     let knownTestEventKeys = new Set();
     let showTargetPointsOverlay = false;
-    const laserControlGroups = ['las', 'treat'];
+    const laserControlGroups = ['las'];
+    const controllerStatusCommands = [
+      'APP_GET_STATE',
+      'LASER_GET_STATE',
+      'PELTIER_GET_STATE',
+      'TARGET_GET_STATE',
+      'SENSORS_GET_STATE',
+      'APP_GET_FW_VERSION',
+      'APP_GET_HW_VERSION',
+    ];
+    let autoStatusRefreshTimer = null;
+    let controllerStatusRefreshRunning = false;
     let loadedTargetCount = 0;
     let laserSettingsConfigured = false;
     let freshTargetsReadyForShootAll = false;
     let vacuumOn = false;
     let vacuumCheckOn = false;
-    let treatmentMode = 'semi_auto';
-    let treatmentManualRemaining = 0;
-    let treatmentStatusText = 'IDLE';
 
     function toggleSection(sectionName) {
       const section = document.getElementById(`section-${sectionName}`);
@@ -1023,7 +1023,6 @@
     
     function updateLiveDetectionCount(count) {
       const liveCountEl = document.getElementById('liveDetectionCount');
-      const treatLiveCountEl = document.getElementById('treatLiveDetectionCount');
       if (liveCountEl) {
         liveCountEl.textContent = count;
         if (count > 0) {
@@ -1032,18 +1031,10 @@
           liveCountEl.style.color = '#888';
         }
       }
-      if (treatLiveCountEl) {
-        treatLiveCountEl.textContent = count;
-        if (count > 0) {
-          treatLiveCountEl.style.color = '#0f0';
-        } else {
-          treatLiveCountEl.style.color = '#888';
-        }
-      }
     }
 
     function syncDetectionToggleInputs(enabled) {
-      ['detectionToggle', 'treatDetectionToggle'].forEach((id) => {
+      ['detectionToggle'].forEach((id) => {
         const el = document.getElementById(id);
         if (el) el.checked = !!enabled;
       });
@@ -1051,11 +1042,11 @@
 
     function syncDetectionConfidenceInputs(conf) {
       const normalized = Number(conf).toFixed(2);
-      ['confVal', 'treatConfVal'].forEach((id) => {
+      ['confVal'].forEach((id) => {
         const el = document.getElementById(id);
         if (el) el.textContent = normalized;
       });
-      ['confRange', 'treatConfRange'].forEach((id) => {
+      ['confRange'].forEach((id) => {
         const el = document.getElementById(id);
         if (el) el.value = normalized;
       });
@@ -1064,12 +1055,17 @@
     function log(msg) {
       const log = document.getElementById('logArea');
       const time = new Date().toLocaleTimeString();
-      log.value = `[${time}] ${msg}\n` + log.value.split('\n').slice(0, 20).join('\n');
+      log.value = `[${time}] ${msg}\n` + log.value.split('\n').slice(0, 120).join('\n');
     }
     
     function updateLog(msg) {
       console.log(msg);
       log(msg);
+    }
+
+    function clearLog() {
+      const log = document.getElementById('logArea');
+      if (log) log.value = '';
     }
 
     function updateErrorBadge(hasErrors) {
@@ -1162,82 +1158,18 @@
     }
 
     function setShootAllEnabled(enabled) {
-      const btn = document.getElementById('treatmentShootAllBtn');
+      const btn = document.getElementById('sequenceShootAllBtn');
       if (!btn) return;
       btn.disabled = !enabled;
     }
 
     function refreshShootAllAvailability() {
-      setShootAllEnabled(
-        loadedTargetCount > 0 &&
-        laserSettingsConfigured &&
-        isLaserArmed &&
-        freshTargetsReadyForShootAll
-      );
-    }
-
-    function renderTreatmentStatus(data = {}) {
-      if (data.mode) treatmentMode = data.mode;
-      if (data.manual_remaining !== undefined) {
-        treatmentManualRemaining = Number(data.manual_remaining || 0);
-      }
-      const overlayValue = data.show_target_points_overlay ?? data.last_result?.show_target_points_overlay;
-      if (overlayValue !== undefined) {
-        showTargetPointsOverlay = Boolean(overlayValue);
-        updateTargetPointsOverlayButton();
-      }
-      const targetCountValue = data.targets_count ?? data.last_result?.targets_count;
-      if (targetCountValue !== undefined) {
-        loadedTargetCount = Number(targetCountValue || 0);
-        updateTargetCountDisplays(targetCountValue);
-      }
-
-      const modeSelect = document.getElementById('treatmentModeSelect');
-      if (modeSelect && modeSelect.value !== treatmentMode) {
-        modeSelect.value = treatmentMode;
-      }
-
-      const statusEl = document.getElementById('treatmentStatus');
-      if (data.status !== undefined) {
-        const nextStatus = data.status || 'IDLE';
-        if (nextStatus !== treatmentStatusText && nextStatus !== 'IDLE') {
-          updateLog(`Treatment status: ${nextStatus}`);
-        }
-        treatmentStatusText = nextStatus;
-        if (statusEl) statusEl.textContent = treatmentStatusText;
-      }
-
-      const remainingEl = document.getElementById('treatmentManualRemaining');
-      if (remainingEl) remainingEl.textContent = String(treatmentManualRemaining);
-
-      const startBtn = document.getElementById('treatmentStartBtn');
-      if (startBtn) {
-        startBtn.disabled = treatmentMode === 'auto';
-        startBtn.textContent = treatmentMode === 'manual' ? 'START MANUAL' : 'START TREATMENT';
-      }
-
-      const nextBtn = document.getElementById('treatmentNextBtn');
-      if (nextBtn) {
-        nextBtn.disabled = treatmentMode !== 'manual' || treatmentManualRemaining <= 0;
-      }
-    }
-
-    async function refreshTreatmentStatus(logFailures = false) {
-      try {
-        const data = await fetchJson('/treatment/status');
-        renderTreatmentStatus(data);
-      } catch (err) {
-        if (logFailures) updateLog(`Treatment status refresh failed: ${err.message || err}`);
-      }
+      setShootAllEnabled(loadedTargetCount > 0);
     }
 
     function updateTargetCountDisplays(targetCount) {
       const normalized = Number.isFinite(Number(targetCount)) ? Number(targetCount) : 0;
       document.getElementById('seqTargetCount').textContent = String(normalized);
-      const treatTargetCountEl = document.getElementById('treatTargetCount');
-      if (treatTargetCountEl) {
-        treatTargetCountEl.textContent = String(normalized);
-      }
     }
 
     async function pollSequenceEvents(logFailures = false) {
@@ -1597,6 +1529,71 @@
       return data;
     }
 
+    function compactResponsePayload(response) {
+      const text = responseText(response);
+      if (!text) return '-';
+      const payload = text.includes('->') ? text.split('->').slice(1).join('->') : text;
+      const parts = [...payload.matchAll(/\[(.*?)\]/g)]
+        .map((match) => match[1])
+        .filter(Boolean);
+      return parts.length ? parts.join(' | ') : text;
+    }
+
+    async function runControllerCommand(command) {
+      const data = await fetchJson('/app/raw_command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command }),
+      });
+      return data.response ?? [];
+    }
+
+    function setControllerStatus(command, value, failed = false) {
+      const el = document.getElementById(`status_${command}`);
+      if (!el) return;
+      el.textContent = value || '-';
+      el.style.color = failed ? '#ff8585' : '#eee';
+    }
+
+    async function refreshControllerStatus(writeLog = false) {
+      if (controllerStatusRefreshRunning) return;
+      controllerStatusRefreshRunning = true;
+      try {
+        for (const command of controllerStatusCommands) {
+          try {
+            const response = await runControllerCommand(command);
+            setControllerStatus(command, compactResponsePayload(response));
+          } catch (err) {
+            setControllerStatus(command, err.message || String(err), true);
+          }
+        }
+        const stamp = new Date().toLocaleTimeString();
+        const stampEl = document.getElementById('statusLastRefresh');
+        if (stampEl) stampEl.textContent = stamp;
+        if (writeLog) updateLog('Controller status queried');
+      } finally {
+        controllerStatusRefreshRunning = false;
+      }
+    }
+
+    function scheduleAutoStatusRefresh() {
+      clearTimeout(autoStatusRefreshTimer);
+      const enabled = document.getElementById('autoStatusRefresh')?.checked;
+      if (!enabled) return;
+      const interval = Number(document.getElementById('statusRefreshInterval')?.value || 2000);
+      autoStatusRefreshTimer = setTimeout(async () => {
+        await refreshControllerStatus(false);
+        scheduleAutoStatusRefresh();
+      }, Math.max(500, interval));
+    }
+
+    function onAutoStatusRefreshChange() {
+      scheduleAutoStatusRefresh();
+      if (document.getElementById('autoStatusRefresh')?.checked) {
+        refreshControllerStatus(false);
+      }
+    }
+
     async function cleanStartupState() {
       updateLog('Cleaning controller startup state...');
       const data = await fetchJson('/startup/clean_state', {method: 'POST'});
@@ -1605,8 +1602,6 @@
       showTargetPointsOverlay = false;
       loadedTargetCount = 0;
       freshTargetsReadyForShootAll = false;
-      treatmentManualRemaining = 0;
-      treatmentStatusText = 'IDLE';
       syncDetectionToggleInputs(false);
       updateTargetCountDisplays(0);
       updateTargetPointsOverlayButton();
@@ -1637,15 +1632,19 @@
       try {
         const arm = await fetchJson('/laser/arm_en');
         const armText = responseText(arm.response);
-        isLaserArmed = armText.includes('1');
-        laserControlGroups.forEach((prefix) => {
-          const armedInput = document.getElementById(`${prefix}Armed`);
-          if (armedInput) armedInput.checked = isLaserArmed;
-        });
-        refreshShootAllAvailability();
+        setLaserArmedState(armText.includes('1'));
       } catch (err) {
         if (logFailures) updateLog(`Laser status refresh failed: ${err.message || err}`);
       }
+    }
+
+    function setLaserArmedState(armed) {
+      isLaserArmed = Boolean(armed);
+      laserControlGroups.forEach((prefix) => {
+        const armedInput = document.getElementById(`${prefix}Armed`);
+        if (armedInput) armedInput.checked = isLaserArmed;
+      });
+      refreshShootAllAvailability();
     }
 
     function logPeltierPrep(peltier) {
@@ -1733,19 +1732,19 @@
         vacuumCheckOn = Boolean(values.check_vacuum_enabled);
       }
 
-      ['treatVacuumOn', 'vacuumPanelOn'].forEach((id) => {
+      ['vacuumPanelOn'].forEach((id) => {
         const input = document.getElementById(id);
         if (input) input.checked = vacuumOn;
       });
-      ['treatVacuumCheck', 'vacuumPanelCheck'].forEach((id) => {
+      ['vacuumPanelCheck'].forEach((id) => {
         const input = document.getElementById(id);
         if (input) input.checked = vacuumCheckOn;
       });
 
-      ['treatVacuumOnBadge', 'vacuumPanelOnBadge', 'vacuumPanelStatusBadge'].forEach((id) => {
+      ['vacuumPanelOnBadge', 'vacuumPanelStatusBadge'].forEach((id) => {
         setVacuumBadge(id, vacuumOn);
       });
-      ['treatVacuumCheckBadge', 'vacuumPanelCheckBadge'].forEach((id) => {
+      ['vacuumPanelCheckBadge'].forEach((id) => {
         setVacuumBadge(id, vacuumCheckOn);
       });
     }
@@ -1762,8 +1761,17 @@
       }
     }
 
+    async function refreshFullAppStatus(writeLog = false) {
+      await refreshControllerStatus(writeLog);
+      await syncLaserSettingsInputs(writeLog);
+      await refreshVacuumStatus(writeLog);
+      await refreshDetectionStatus(writeLog);
+      await refreshSequenceStatus();
+      await updateGalvoDisplay();
+    }
+
     async function toggleVacuum(source = 'panel') {
-      const inputId = source === 'treat' ? 'treatVacuumOn' : 'vacuumPanelOn';
+      const inputId = 'vacuumPanelOn';
       const input = document.getElementById(inputId);
       const nextState = Boolean(input && input.checked);
       const endpoint = nextState ? '/vacuum/on' : '/vacuum/off';
@@ -1772,16 +1780,17 @@
       try {
         const data = await fetchJson(endpoint, { method: 'POST' });
         updateLog(`Vacuum response: ${responseText(data.response)}`);
-        syncVacuumControls({ vacuum_on: nextState });
-        await refreshVacuumStatus();
+        syncVacuumControls({ vacuum_on: data.vacuum_on ?? nextState });
+        await refreshFullAppStatus(false);
       } catch (err) {
         updateLog(`Vacuum update failed: ${err.message || err}`);
         await refreshVacuumStatus(true);
+        await refreshFullAppStatus(false);
       }
     }
 
     async function toggleVacuumCheck(source = 'panel') {
-      const inputId = source === 'treat' ? 'treatVacuumCheck' : 'vacuumPanelCheck';
+      const inputId = 'vacuumPanelCheck';
       const input = document.getElementById(inputId);
       const nextState = Boolean(input && input.checked);
 
@@ -1789,18 +1798,18 @@
       try {
         const data = await fetchJson(`/vacuum/check?enabled=${nextState}`, { method: 'POST' });
         updateLog(`Vacuum check response: ${responseText(data.response)}`);
-        syncVacuumControls({ check_vacuum_enabled: nextState });
-        await refreshVacuumStatus();
+        syncVacuumControls({ check_vacuum_enabled: data.check_vacuum_enabled ?? nextState });
+        await refreshFullAppStatus(false);
       } catch (err) {
         updateLog(`Vacuum check update failed: ${err.message || err}`);
         await refreshVacuumStatus(true);
+        await refreshFullAppStatus(false);
       }
     }
 
     setInterval(() => pollAppErrorEvents(false), 1200);
     setInterval(() => pollSequenceEvents(false), 1200);
     setInterval(() => pollTestEvents(false), 1500);
-    setInterval(() => refreshTreatmentStatus(false), 1200);
 
     function setSensorValue(id, value) {
       const el = document.getElementById(id);
@@ -1855,9 +1864,8 @@
       }
     }
 
-    async function toggleDetection(source = 'main') {
-      const toggleId = source === 'treat' ? 'treatDetectionToggle' : 'detectionToggle';
-      const checked = document.getElementById(toggleId).checked;
+    async function toggleDetection() {
+      const checked = document.getElementById('detectionToggle').checked;
       try {
         await fetchJson(`/detection/toggle?enabled=${checked}`, {method: 'POST'});
         detectionOn = checked;
@@ -1870,7 +1878,7 @@
       }
     }
     
-    async function onConfChange(v, source = 'main') {
+    async function onConfChange(v) {
       const val = Number(v);
       syncDetectionConfidenceInputs(val);
       try {
@@ -1966,9 +1974,11 @@
         const data = await fetchJson('/laser/arm', {method: 'POST'});
         logPeltierPrep(data.peltier);
         updateLog(`Arm response: ${responseText(data.response)}`);
-        await refreshLaserStatus();
+        setLaserArmedState(data.laser_armed ?? true);
+        await refreshFullAppStatus(false);
       } catch (err) {
         updateLog(`Arm failed: ${err}`);
+        await refreshFullAppStatus(false);
       }
     }
     
@@ -1977,9 +1987,11 @@
       try {
         const data = await fetchJson('/laser/disarm', {method: 'POST'});
         updateLog(`Disarm response: ${responseText(data.response)}`);
-        await refreshLaserStatus();
+        setLaserArmedState(data.laser_armed ?? false);
+        await refreshFullAppStatus(false);
       } catch (err) {
         updateLog(`Disarm failed: ${err}`);
+        await refreshFullAppStatus(false);
       }
     }
     
@@ -2037,7 +2049,6 @@
       try {
         const data = await fetchJson(`/laser/red_dot_en?enabled=${enabled}`, {method: 'POST'});
         updateLog(`Red dot response: ${responseText(data.response)}`);
-        await refreshLaserStatus();
       } catch (err) {
         updateLog(`Red dot update failed: ${err}`);
       }
@@ -2054,10 +2065,13 @@
         if (data.pending_sync) {
           updateLog('Laser powers staged locally and will auto-sync once the app is RUNNING and idle');
         }
-        await syncChannelPowerInputs();
-        await refreshLaserStatus();
+        if (data.power) {
+          setLaserControlValues(data.power);
+        }
+        await refreshFullAppStatus(false);
       } catch (err) {
         updateLog(`Failed: ${err}`);
+        await refreshFullAppStatus(false);
       }
     }
     
@@ -2068,8 +2082,10 @@
         const data = await fetchJson(`/laser/pulse?pulse_ms=${pulse}`, {method: 'POST'});
         updateLog(`Response: ${responseText(data.response)}`);
         setLaserControlValues({ pulse_ms: pulse });
+        await refreshFullAppStatus(false);
       } catch (err) {
         updateLog(`Failed: ${err}`);
+        await refreshFullAppStatus(false);
       }
     }
 
@@ -2107,10 +2123,22 @@
           updateLog(`Reloaded ${data.targets_count || 0} target points with current laser settings`);
         }
         laserSettingsConfigured = true;
-        await syncLaserSettingsInputs();
-        await refreshSequenceStatus();
+        setLaserArmedState(data.armed);
+        setLaserControlValues({
+          armed: data.armed,
+          p808: data.power?.p808,
+          p980: data.power?.p980,
+          p1064: data.power?.p1064,
+          pulse_ms: data.pulse_ms,
+        });
+        if (data.targets_count !== undefined) {
+          loadedTargetCount = Number(data.targets_count || 0);
+          updateTargetCountDisplays(data.targets_count);
+        }
+        await refreshFullAppStatus(false);
       } catch (err) {
         updateLog(`Laser settings update failed: ${err}`);
+        await refreshFullAppStatus(false);
       }
     }
 
@@ -2120,7 +2148,6 @@
       try {
         const data = await fetchJson(`/laser/fire?duration_ms=${pulse}`, {method: 'POST'});
         updateLog(`Fire response: ${responseText(data.response)}`);
-        await refreshLaserStatus();
       } catch (err) {
         updateLog(`Single fire failed: ${err}`);
       }
@@ -2190,7 +2217,6 @@
           updateLog(`Target loading time: ${data.load_ms} ms`);
         }
         updateLog(`Response: ${responseText(data.response)}`);
-        await refreshSequenceStatus();
         return data;
       } catch (err) {
         updateLog(`Failed: ${err}`);
@@ -2238,7 +2264,6 @@
         updateTargetCountDisplays(data.targets_count || 0);
         refreshShootAllAvailability();
         updateLog(`Response: ${responseText(data.response)}`);
-        await refreshSequenceStatus();
       } catch (err) {
         updateLog(`Failed: ${err}`);
       }
@@ -2261,97 +2286,12 @@
       }
     }
 
-    async function setTreatmentMode(mode) {
-      const label = String(mode || '').replace('_', ' ').toUpperCase();
-      updateLog(`Setting treatment mode to ${label}...`);
-      try {
-        const data = await fetchJson(`/treatment/mode?mode=${encodeURIComponent(mode)}`, {method: 'POST'});
-        renderTreatmentStatus(data);
-        updateLog(`Treatment mode set to ${String(data.mode || mode).replace('_', ' ').toUpperCase()}`);
-      } catch (err) {
-        updateLog(`Treatment mode failed: ${err.message || err}`);
-        await refreshTreatmentStatus(true);
-      }
-    }
-
-    function applyTreatmentResult(data) {
-      renderTreatmentStatus(data);
-      if (data.targets_count !== undefined) {
-        loadedTargetCount = Number(data.targets_count || 0);
-        updateTargetCountDisplays(data.targets_count);
-      }
-      if (data.show_target_points_overlay !== undefined) {
-        showTargetPointsOverlay = Boolean(data.show_target_points_overlay);
-        updateTargetPointsOverlayButton();
-      }
-      if (data.highlight_delay_s > 0) {
-        updateLog(`Target points highlighted for ${data.highlight_delay_s.toFixed(2)}s before shooting`);
-      }
-      if (data.truncated) {
-        updateLog(`Too many detections (${data.detected_count}); limited target loading to ${data.max_targets} points`);
-      }
-      if (data.load_ms !== undefined) {
-        updateLog(`Treatment target loading time: ${data.load_ms} ms`);
-      }
-      if (data.manual_remaining !== undefined) {
-        updateLog(`Manual treatment targets remaining: ${data.manual_remaining}`);
-      }
-      if (data.response) {
-        updateLog(`Treatment response: ${responseText(data.response)}`);
-      }
-    }
-
-    async function startTreatment() {
-      updateLog(`Starting ${treatmentMode.replace('_', ' ').toUpperCase()} treatment...`);
-      try {
-        const data = await fetchJson('/treatment/start', {method: 'POST'});
-        applyTreatmentResult(data);
-        if (data.status === 'shooting') {
-          updateSequenceBadge('RUN');
-        }
-        await refreshSequenceStatus();
-        await refreshTreatmentStatus();
-      } catch (err) {
-        updateLog(`Treatment start blocked: ${err.message || err}`);
-        await refreshTreatmentStatus(true);
-      }
-    }
-
-    async function nextTreatmentTarget() {
-      updateLog('Manual treatment NEXT...');
-      try {
-        const data = await fetchJson('/treatment/next', {method: 'POST'});
-        applyTreatmentResult(data);
-        if (data.done) {
-          updateLog('Manual treatment complete');
-        }
-        await refreshSequenceStatus();
-        await refreshTreatmentStatus();
-      } catch (err) {
-        updateLog(`Manual NEXT blocked: ${err.message || err}`);
-        await refreshTreatmentStatus(true);
-      }
-    }
-
-    async function stopTreatment() {
-      updateLog('Stopping treatment...');
-      try {
-        const data = await fetchJson('/treatment/stop', {method: 'POST'});
-        renderTreatmentStatus(data);
-        updateLog(`Treatment stopped: ${responseText(data.response)}`);
-        await refreshSequenceStatus();
-      } catch (err) {
-        updateLog(`Treatment stop failed: ${err.message || err}`);
-      }
-    }
-
     async function setTargetMode(mode) {
       const label = String(mode || '').toUpperCase();
       updateLog(`Setting target mode to ${label}...`);
       try {
         const data = await fetchJson(`/seq/mode?mode=${encodeURIComponent(mode)}`, {method: 'POST'});
         updateLog(`Response: ${responseText(data.response)}`);
-        await refreshSequenceStatus();
       } catch (err) {
         updateLog(`Failed: ${err}`);
       }
@@ -2365,7 +2305,6 @@
           updateTargetCountDisplays(data.targets_count);
         }
         updateLog(`Response: ${responseText(data.response)}`);
-        await refreshSequenceStatus();
       } catch (err) {
         updateLog(`Failed: ${err}`);
       }
@@ -2388,21 +2327,8 @@
       }
     }
 
-    async function shootAll(source = 'sequence') {
-      if (source === 'treatment') {
-        const treatmentShootBtn = document.getElementById('treatmentShootAllBtn');
-        if (treatmentShootBtn && treatmentShootBtn.disabled) {
-          const reasons = [];
-          if (!laserSettingsConfigured) reasons.push('laser settings have not been applied yet');
-          if (!isLaserArmed) reasons.push('laser is not armed');
-          if (!(loadedTargetCount > 0)) reasons.push('no target points are loaded');
-          if (!freshTargetsReadyForShootAll) reasons.push('fresh target points from DETECT HAIR are required');
-          updateLog(`SHOOT ALL is disabled: ${reasons.join(' | ')}`);
-          return;
-        }
-      }
-
-      updateLog(`Starting SHOOT ALL${source === 'treatment' ? ' from TREATMENT' : ''}...`);
+    async function shootAll() {
+      updateLog('Starting SHOOT ALL...');
       try {
         const data = await fetchJson('/seq/start', {method: 'POST'});
         if (data.targets_count !== undefined) {
@@ -2410,23 +2336,9 @@
           updateTargetCountDisplays(data.targets_count);
         }
         freshTargetsReadyForShootAll = false;
-        if (source === 'treatment' && showTargetPointsOverlay) {
-          try {
-            const overlayData = await fetchJson('/seq/show_targets?enabled=false', {method: 'POST'});
-            showTargetPointsOverlay = Boolean(overlayData.show_target_points_overlay);
-            updateTargetPointsOverlayButton();
-            if (overlayData.targets_count !== undefined) {
-              updateTargetCountDisplays(overlayData.targets_count);
-            }
-            updateLog('Target points overlay hidden after TREATMENT SHOOT ALL');
-          } catch (overlayErr) {
-            updateLog(`Could not hide target points after TREATMENT SHOOT ALL: ${overlayErr}`);
-          }
-        }
         refreshShootAllAvailability();
         updateLog(`Shoot all response: ${responseText(data.response)}`);
         updateSequenceBadge('RUN');
-        await refreshSequenceStatus();
       } catch (err) {
         updateLog(`Failed: ${err}`);
       }
@@ -2440,7 +2352,6 @@
           updateTargetCountDisplays(data.targets_count);
         }
         updateLog(`Response: ${responseText(data.response)}`);
-        await refreshSequenceStatus();
       } catch (err) {
         updateLog(`Failed: ${err}`);
       }
@@ -2454,7 +2365,6 @@
           updateTargetCountDisplays(data.targets_count);
         }
         updateLog(`Response: ${responseText(data.response)}`);
-        await refreshSequenceStatus();
       } catch (err) {
         updateLog(`Failed: ${err}`);
       }
@@ -2513,11 +2423,8 @@
       connectDetectionSSE();
       await loadCommandCatalog();
       await setTargetMode('auto');
-      await refreshDetectionStatus(true);
       updateWavelengthHighlights();
-      await syncLaserSettingsInputs(true);
-      await refreshVacuumStatus(true);
-      await refreshTreatmentStatus(true);
+      await refreshFullAppStatus(true);
       await refreshAppErrors(true);
       await pollAppErrorEvents(true);
       await pollSequenceEvents(true);

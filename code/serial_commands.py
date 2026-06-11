@@ -8,6 +8,7 @@ from a separate file.
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 COMMANDS = {'LASER_SET_ARM_EN': {'name': 'LASER_SET_ARM_EN',
@@ -820,6 +821,8 @@ ASYNC_MESSAGES = {
     if meta["section"] == "ASYNC MESSAGES"
 }
 
+RESPONSE_STATUS_TOKENS = {"OK", "NOK", "END"}
+
 def build_command(command_name: str, *params: Any) -> str:
     """Build a serial command string."""
     if not params:
@@ -842,6 +845,34 @@ def sensor_values_to_dict(values: list[Any]) -> dict[str, Any]:
     for field, value in zip(SENSOR_FIELDS, values):
         result[field["dict_key"]] = value
     return result
+
+def response_payload_tokens(response: Any) -> list[str]:
+    """Return bracketed payload tokens after the serial response arrow."""
+    tokens: list[str] = []
+    lines = response if isinstance(response, (list, tuple)) else [response]
+    for line in lines:
+        text = str(line)
+        if "->" not in text:
+            continue
+        payload = text.split("->", 1)[1]
+        tokens.extend(token.strip() for token in re.findall(r"\[([^\]]*)\]", payload))
+    return tokens
+
+def response_data_tokens(response: Any) -> list[str]:
+    """Return response payload tokens excluding protocol status markers."""
+    return [
+        token
+        for token in response_payload_tokens(response)
+        if token.upper() not in RESPONSE_STATUS_TOKENS
+    ]
+
+def response_status(line: Any) -> str | None:
+    """Return OK/NOK/END when it is the first payload token."""
+    tokens = response_payload_tokens(line)
+    if not tokens:
+        return None
+    status = tokens[0].upper()
+    return status if status in RESPONSE_STATUS_TOKENS else None
 
 def is_async_message(message: str) -> bool:
     """Check whether a raw message starts with a known async event name."""

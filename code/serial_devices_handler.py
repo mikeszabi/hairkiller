@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
 import argparse
+import queue
 import sys
+import threading
 import time
 from dataclasses import dataclass
 from typing import List, Optional
 
 import serial
 from serial.tools import list_ports
-from serial_commands import is_async_message
+from serial_commands import is_async_message, response_payload_tokens, response_status
 
 DEFAULT_PORT = '/dev/ttyACM0'
 DEFAULT_BAUD = 115200
-DEFAULT_TIMEOUT_S = 0.4
-DEFAULT_EOL = "\n"  # change to "\r\n" if the device requires CRLF
+DEFAULT_TIMEOUT_S = 0.1
+DEFAULT_COMMAND_TIMEOUT_S = 1.0
+DEFAULT_EOL = "\r\n"
 
 
 def list_serial_ports() -> List[str]:
@@ -29,6 +32,12 @@ class SerialDevice:
 
     def __post_init__(self) -> None:
         self._async_messages: List[str] = []
+        self._response_lines: "queue.Queue[str]" = queue.Queue()
+        self._query_lock = threading.Lock()
+        self._async_lock = threading.Lock()
+        self._reader_stop = threading.Event()
+        self._reader: Optional[threading.Thread] = None
+        self.ser = None
 
     def open(self) -> None:
         self.ser = serial.Serial(
@@ -43,8 +52,14 @@ class SerialDevice:
         # Some USB-serial chips reset on open; short settle helps.
         time.sleep(0.2)
         self.flush()
+        self._reader_stop.clear()
+        self._reader = threading.Thread(target=self._read_loop, daemon=True)
+        self._reader.start()
 
     def close(self) -> None:
+        self._reader_stop.set()
+        if self._reader is not None:
+            self._reader.join(timeout=1.0)
         try:
             self.ser.close()
         except Exception:
@@ -53,6 +68,55 @@ class SerialDevice:
     def flush(self) -> None:
         self.ser.reset_input_buffer()
         self.ser.reset_output_buffer()
+        self._drain_response_queue()
+
+    @staticmethod
+    def command_prefix(cmd: str) -> str:
+        return str(cmd).strip().split(maxsplit=1)[0].strip().upper()
+
+    @staticmethod
+    def _prefix_token(prefix: str) -> str:
+        prefix = str(prefix).strip()
+        if prefix.startswith("["):
+            return prefix
+        return f"[{prefix}]"
+
+    @staticmethod
+    def _line_matches_prefix(line: str, prefix: str) -> bool:
+        return str(line).strip().upper().startswith(str(prefix).strip().upper())
+
+    def _read_loop(self) -> None:
+        while not self._reader_stop.is_set():
+            try:
+                raw = self.ser.readline()
+            except Exception as exc:
+                with self._async_lock:
+                    self._async_messages.append(f"[SERIAL_ERROR]->[{exc}]")
+                self._reader_stop.set()
+                return
+
+            if not raw:
+                continue
+            try:
+                line = raw.decode("utf-8", errors="replace").strip()
+            except Exception:
+                line = str(raw).strip()
+            if not line:
+                continue
+            if is_async_message(line):
+                with self._async_lock:
+                    self._async_messages.append(line)
+            self._response_lines.put(line)
+
+    def _drain_response_queue(self, max_lines: int = 200) -> List[str]:
+        lines: List[str] = []
+        for _ in range(max_lines):
+            try:
+                line = self._response_lines.get_nowait()
+            except queue.Empty:
+                break
+            lines.append(line)
+        return lines
 
     def _read_available_lines(self, max_lines: int = 50) -> List[str]:
         lines = []
@@ -76,8 +140,9 @@ class SerialDevice:
         return lines
 
     def pop_async_messages(self) -> List[str]:
-        messages = list(self._async_messages)
-        self._async_messages.clear()
+        with self._async_lock:
+            messages = list(self._async_messages)
+            self._async_messages.clear()
         return messages
 
     def query(
@@ -89,46 +154,68 @@ class SerialDevice:
         extra_read_window_s: float = 0.2,
     ) -> List[str]:
         """
-        Send a command, then collect lines that arrive shortly after.
-        Returns all non-empty response lines.
+        Send a command and return the matching response lines.
+
+        This mirrors the fast tester: a background reader owns readline(), while
+        each query waits only until the controller emits OK/NOK/END for the
+        command prefix. The wait_s and extra_read_window_s arguments are kept
+        for compatibility with older callers; extra_read_window_s now acts as a
+        minimum command timeout instead of an unconditional post-write sleep.
         """
         payload = (cmd.strip() + self.eol).encode("utf-8")
+        prefix = self._prefix_token(expect_prefix or self.command_prefix(cmd))
+        timeout_s = max(DEFAULT_COMMAND_TIMEOUT_S, float(extra_read_window_s or 0.0))
 
-        for attempt in range(retries + 1):
-            if self.debug:
-                print(f">>> {cmd}")
-            self.ser.write(payload)
-            self.ser.flush()
-            time.sleep(wait_s)
+        with self._query_lock:
+            last_lines: List[str] = []
+            for attempt in range(retries + 1):
+                self._drain_response_queue()
+                if self.debug:
+                    print(f">>> {cmd}")
+                self.ser.write(payload)
+                self.ser.flush()
 
-            # Read a first batch
-            lines = self._read_available_lines()
+                matched: List[str] = []
+                unmatched: List[str] = []
+                awaiting_end = False
+                deadline = time.monotonic() + timeout_s
+                while time.monotonic() < deadline:
+                    try:
+                        line = self._response_lines.get(timeout=0.02)
+                    except queue.Empty:
+                        continue
 
-            # Some commands (sequence) may produce delayed INFO lines:
-            t_end = time.time() + extra_read_window_s
-            while time.time() < t_end:
-                more = self._read_available_lines()
-                if more:
-                    lines.extend(more)
-                    # extend window a bit if we keep receiving data
-                    t_end = time.time() + extra_read_window_s
-                else:
-                    time.sleep(0.02)
+                    if self.debug:
+                        print(f"<<< {line}")
 
-            if self.debug:
-                for ln in lines:
-                    print(f"<<< {ln}")
+                    if not self._line_matches_prefix(line, prefix):
+                        unmatched.append(line)
+                        continue
 
-            if expect_prefix is None:
-                return lines
+                    matched.append(line)
+                    status = response_status(line)
+                    payload_tokens = response_payload_tokens(line)
+                    first_payload = payload_tokens[0].strip() if payload_tokens else ""
+                    is_count_header = first_payload.upper().startswith("COUNT,")
+                    if is_count_header:
+                        awaiting_end = True
 
-            if any(ln.startswith(expect_prefix) for ln in lines):
-                return lines
+                    if status == "NOK":
+                        return matched
+                    if status == "END":
+                        return matched
+                    if status == "OK" and not is_count_header:
+                        return matched
+                    if status is None and not is_count_header and not awaiting_end:
+                        return matched
 
-            if attempt < retries:
-                time.sleep(0.1)
+                last_lines = matched or unmatched
+                if matched:
+                    return matched
+                if attempt < retries:
+                    time.sleep(0.05)
 
-        return lines
+            return last_lines
 
 
 def parse_args_base(description: str):

@@ -3,26 +3,19 @@
 from __future__ import annotations
 
 import argparse
-import re
 import sys
 from typing import Optional
 
 from serial_devices_handler import SerialDevice, DEFAULT_PORT, DEFAULT_BAUD
-from serial_commands import build_command
+from serial_commands import build_command, response_data_tokens
 
 
 def _extract_bool_response(lines: list[str]) -> Optional[bool]:
-    """Extract a firmware boolean response formatted like [CMD]->[1][TS]."""
+    """Extract a firmware boolean response from [CMD]->[1][TS] or [CMD]->[OK][1][TS]."""
     if not isinstance(lines, list):
         return None
 
-    for line in lines:
-        text = str(line).strip()
-        match = re.search(r"->\[(.*?)\]", text)
-        if not match:
-            continue
-
-        value = match.group(1).strip()
+    for value in response_data_tokens(lines):
         if value == "1":
             return True
         if value == "0":

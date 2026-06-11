@@ -333,8 +333,13 @@
 
     function extractPayload(response) {
       const text = responseText(response);
-      const match = text.match(/->\[(.*?)\]/);
-      return match ? match[1] : (text || '-');
+      const arrowIndex = text.indexOf('->');
+      if (arrowIndex === -1) return text || '-';
+
+      const payload = text.slice(arrowIndex + 2);
+      const tokens = [...payload.matchAll(/\[([^\]]*)\]/g)].map((match) => match[1].trim());
+      const dataToken = tokens.find((token) => !['OK', 'NOK', 'END'].includes(token.toUpperCase()));
+      return dataToken || tokens[0] || text || '-';
     }
 
     function log(message) {
@@ -512,14 +517,24 @@
 
     async function toggleArm() {
       const path = state.armed ? '/laser/disarm' : '/laser/arm';
-      await command(state.armed ? 'Laser disarmed' : 'Laser armed', path);
-      await refreshStatus(false);
+      const data = await command(state.armed ? 'Laser disarmed' : 'Laser armed', path);
+      if (data) {
+        state.armed = Boolean(data.laser_armed ?? !state.armed);
+        renderActions();
+        el('laserState').textContent = state.armed ? 'ARMED' : 'DISARMED';
+        await refreshStatus(false);
+      }
     }
 
     async function toggleVacuum() {
       const path = state.vacuumOn ? '/vacuum/off' : '/vacuum/on';
-      await command(state.vacuumOn ? 'Vacuum off' : 'Vacuum on', path);
-      await refreshStatus(false);
+      const data = await command(state.vacuumOn ? 'Vacuum off' : 'Vacuum on', path);
+      if (data) {
+        state.vacuumOn = Boolean(data.vacuum_on ?? !state.vacuumOn);
+        renderActions();
+        el('vacuumState').textContent = state.vacuumOn ? 'ON' : 'OFF';
+        await refreshStatus(false);
+      }
     }
 
     async function toggleDetection() {
@@ -548,7 +563,10 @@
       const path = `/treatment/app/settings?${params.toString()}`;
       if (writeLog) {
         const data = await command('Laser settings applied', path);
-        if (data) state.settingsDirty = false;
+        if (data) {
+          state.settingsDirty = false;
+          await refreshStatus(false);
+        }
         return data;
       }
       try {
@@ -562,6 +580,7 @@
         if (data.pulse_ms !== undefined) el('pulse').value = data.pulse_ms;
         renderActions();
         state.settingsDirty = false;
+        await refreshStatus(false);
         return data;
       } catch (err) {
         log(`Laser settings failed: ${err.message || err}`);

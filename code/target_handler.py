@@ -126,12 +126,14 @@ class TargetInterface:
         load_read_window_s = float(os.getenv("HK_TARGET_LOAD_READ_WINDOW_S", "0.008"))
 
         # clear and load new targets
-        self._send("TARGET_CLEAR_TARGETS", wait_s=load_wait_s, extra_read_window_s=load_read_window_s)
+        clear_resp = self._send("TARGET_CLEAR_TARGETS", wait_s=load_wait_s, extra_read_window_s=load_read_window_s)
+        if any("NOK" in str(line) or "ERROR:" in str(line) for line in clear_resp):
+            return clear_resp + ["ERROR: failed to clear targets"]
 
         p808, p980, p1064 = self.channel_provider()
 
         for idx, (x, y) in sorted(self.targets.items()):
-            self._send(
+            resp = self._send(
                 "TARGET_SET_NEW_TARGET",
                 x,
                 y,
@@ -144,9 +146,13 @@ class TargetInterface:
                 wait_s=load_wait_s,
                 extra_read_window_s=load_read_window_s,
             )
+            if any("NOK" in str(line) or "ERROR:" in str(line) for line in resp):
+                return resp + [f"ERROR: failed to load target {idx}"]
 
         if mode is not None:
-            self.set_mode(mode)
+            mode_resp = self.set_mode(mode)
+            if any("NOK" in str(line) or "ERROR:" in str(line) for line in mode_resp):
+                return mode_resp + ["ERROR: failed to set target mode"]
 
         return [f"TARGET_COUNT={len(self.targets)}"]
 
