@@ -5,8 +5,8 @@ This script checks the main runtime dependencies used by backend/hk_backend_app.
 - Python package imports as one grouped check
 - Required local files as one grouped check
 - CUDA/model readiness for YOLO inference
-- Microcontroller availability and basic protocol responses
-- Camera stream frame capture
+- Microcontroller device-node/backend liveness without opening a new serial connection
+- Camera device-node/backend liveness without opening a new camera connection
 
 Exit code:
 - 0: all required checks passed
@@ -206,11 +206,65 @@ def check_serial_handshake(port: str, baud: int, timeout_s: float) -> tuple[bool
         dev.close()
 
 
-def check_microcontroller(port: str, baud: int, timeout_s: float) -> tuple[bool, str]:
+def _read_json_url(url: str, timeout_s: float) -> dict:
+    with urllib.request.urlopen(url, timeout=timeout_s) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def _post_json_url(url: str, payload: dict | None, timeout_s: float) -> dict:
+    data = None if payload is None else json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(
+        url,
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=timeout_s) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def check_backend_microcontroller(api_base: str, timeout_s: float = 6.0) -> tuple[bool, str]:
+    base = api_base.rstrip("/")
+    ping_url = f"{base}/app/ping?t={int(time.time() * 1000)}"
+
+    try:
+        payload = _post_json_url(ping_url, None, timeout_s)
+    except urllib.error.HTTPError as exc:
+        try:
+            detail = exc.read().decode("utf-8")
+        except Exception:
+            detail = str(exc)
+        return False, f"backend app ping failed at {ping_url}: HTTP {exc.code}: {detail}"
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        return False, f"backend app ping failed at {ping_url}: {type(exc).__name__}: {exc}"
+
+    response = payload.get("response")
+    lines = response if isinstance(response, list) else [response]
+    if any("[APP_PING]" in str(line) and "[OK]" in str(line) for line in lines):
+        return True, f"backend APP_PING OK: {lines[0]}"
+    if any("OK" in str(line).upper() for line in lines):
+        return True, f"backend app ping returned OK: {response}"
+    return False, f"backend APP_PING did not return OK: {response}"
+
+
+def check_microcontroller(
+    port: str,
+    baud: int,
+    timeout_s: float,
+    backend_api_base: str | None = None,
+    allow_hardware_open: bool = False,
+) -> tuple[bool, str]:
     try:
         port_ok, port_message = check_serial_port_presence(port)
         if not port_ok:
             return False, port_message
+
+        if backend_api_base:
+            backend_ok, backend_message = check_backend_microcontroller(backend_api_base)
+            return backend_ok, f"{port_message}; {backend_message}"
+
+        if not allow_hardware_open:
+            return True, f"{port_message}; serial handshake skipped to avoid opening a second connection"
 
         return check_serial_handshake(port, baud, timeout_s)
     except Exception as exc:
@@ -263,49 +317,37 @@ def check_camera_stream() -> tuple[bool, str]:
         cap.release()
 
 
-def check_backend_camera_stream(api_base: str, timeout_s: float = 6.0) -> tuple[bool, str]:
+def check_backend_camera_status(api_base: str, timeout_s: float = 6.0) -> tuple[bool, str]:
     base = api_base.rstrip("/")
     health_url = f"{base}/health?t={int(time.time() * 1000)}"
-    stream_url = f"{base}/frame/current?t={int(time.time() * 1000)}"
 
     try:
-        with urllib.request.urlopen(health_url, timeout=timeout_s) as response:
-            health = json.loads(response.read().decode("utf-8"))
+        health = _read_json_url(health_url, timeout_s)
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
         return False, f"backend health check failed at {health_url}: {type(exc).__name__}: {exc}"
 
     if not health.get("camera_ready"):
         return False, f"backend reports camera not ready: {health.get('camera_error') or health}"
 
-    try:
-        with urllib.request.urlopen(stream_url, timeout=timeout_s) as response:
-            content_type = response.headers.get("Content-Type", "")
-            if "multipart/x-mixed-replace" not in content_type:
-                return False, f"unexpected stream content type: {content_type or 'missing'}"
-
-            deadline = time.monotonic() + timeout_s
-            payload = bytearray()
-            while time.monotonic() < deadline and len(payload) < 4096:
-                chunk = response.read(1024)
-                if not chunk:
-                    break
-                payload.extend(chunk)
-                if b"\xff\xd8" in payload and b"Content-Type: image/jpeg" in payload:
-                    return True, f"backend MJPEG stream OK via {stream_url}"
-    except (urllib.error.URLError, TimeoutError) as exc:
-        return False, f"backend camera stream failed at {stream_url}: {type(exc).__name__}: {exc}"
-
-    return False, f"backend stream opened but no JPEG frame arrived within {timeout_s:.1f}s"
+    frame = health.get("last_frame_index")
+    age = health.get("frame_age_ms")
+    return True, f"backend camera ready via {health_url}, frame={frame}, age_ms={age}"
 
 
-def check_camera(backend_api_base: str | None = None) -> tuple[bool, str]:
+def check_camera(
+    backend_api_base: str | None = None,
+    allow_hardware_open: bool = False,
+) -> tuple[bool, str]:
     if backend_api_base:
-        return check_backend_camera_stream(backend_api_base)
+        return check_backend_camera_status(backend_api_base)
 
     device_ok, device_message = check_camera_device_path()
     if not device_ok:
         _, found_devices = list_found_camera_devices()
         return False, f"{device_message}; available camera devices: {found_devices}"
+
+    if not allow_hardware_open:
+        return True, f"{device_message}; camera stream check skipped to avoid opening a second connection"
 
     try:
         return check_camera_stream()
@@ -330,7 +372,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--backend-api-base",
         default="",
-        help="Check the already-running backend camera stream instead of opening the camera device directly",
+        help="Check already-running backend endpoints instead of opening hardware devices directly",
+    )
+    parser.add_argument(
+        "--allow-hardware-open",
+        action="store_true",
+        help="Allow this script to open serial/camera devices directly. Use only when the backend service is stopped.",
     )
     return parser
 
@@ -364,11 +411,23 @@ def main() -> int:
         checklist.run("YOLO model load", lambda: check_yolo_model_load(model_path))
 
     checklist.run(
-        f"Microcontroller {args.port} serial handshake",
-        lambda: check_microcontroller(args.port, args.baud, args.timeout),
+        f"Microcontroller {args.port}",
+        lambda: check_microcontroller(
+            args.port,
+            args.baud,
+            args.timeout,
+            backend_api_base=args.backend_api_base or None,
+            allow_hardware_open=args.allow_hardware_open,
+        ),
     )
 
-    checklist.run("Camera stream", lambda: check_camera(args.backend_api_base or None))
+    checklist.run(
+        "Camera",
+        lambda: check_camera(
+            args.backend_api_base or None,
+            allow_hardware_open=args.allow_hardware_open,
+        ),
+    )
 
     checklist.print_report()
 

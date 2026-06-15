@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HK Annotation Capture</title>
+  <style>
+    :root {
+      --bg: #101416;
+      --panel: #192024;
+      --panel-2: #11181b;
+      --text: #edf5f2;
+      --muted: #9cadad;
+      --accent: #65d58b;
+      --warn: #f0c36c;
+      --danger: #ff8072;
+      --border: #344248;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      padding: 18px;
+    }
+
+    .shell {
+      max-width: 1480px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 380px;
+      gap: 16px;
+      align-items: start;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .stack {
+      display: grid;
+      gap: 16px;
+    }
+
+    h1, h2 {
+      margin: 0;
+    }
+
+    h1 {
+      font-size: 26px;
+    }
+
+    h2 {
+      font-size: 16px;
+      margin-bottom: 12px;
+    }
+
+    .viewer {
+      display: grid;
+      place-items: center;
+      min-height: 68vh;
+      background: #050708;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    img {
+      display: block;
+      width: 100%;
+      height: auto;
+      max-height: 80vh;
+      object-fit: contain;
+      background: #000;
+    }
+
+    label {
+      display: grid;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    input,
+    textarea,
+    button {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel-2);
+      color: var(--text);
+      padding: 11px 12px;
+      font-size: 14px;
+    }
+
+    textarea {
+      min-height: 120px;
+      resize: vertical;
+      line-height: 1.4;
+    }
+
+    button {
+      cursor: pointer;
+      font-weight: bold;
+      background: #1f3a2a;
+      border-color: #3a7d52;
+    }
+
+    button:hover {
+      border-color: var(--accent);
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.58;
+    }
+
+    .form {
+      display: grid;
+      gap: 12px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .status {
+      min-height: 22px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+    }
+
+    .status.ok { color: var(--accent); }
+    .status.error { color: var(--danger); }
+    .status.warn { color: var(--warn); }
+
+    pre {
+      margin: 0;
+      padding: 12px;
+      background: #0b1012;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: #cde7dc;
+      overflow: auto;
+      max-height: 260px;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    @media (max-width: 1050px) {
+      .shell {
+        grid-template-columns: 1fr;
+      }
+
+      .viewer {
+        min-height: 420px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="stack">
+      <section class="panel">
+        <h1>Annotation Capture</h1>
+      </section>
+
+      <section class="panel">
+        <div class="viewer">
+          <img id="camera" alt="Camera stream" />
+        </div>
+      </section>
+    </div>
+
+    <div class="stack">
+      <section class="panel">
+        <h2>Connection</h2>
+        <div class="form">
+          <label>
+            Backend API base
+            <input id="apiBase" type="text" placeholder="http://localhost:8000/api" />
+          </label>
+          <div class="row">
+            <button id="connectBtn" type="button">Connect</button>
+            <button id="refreshBtn" type="button">Refresh</button>
+          </div>
+          <div id="streamStatus" class="status">Idle</div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Capture Metadata</h2>
+        <div class="form">
+          <label>
+            Store directory
+            <input id="storeDirectory" type="text" placeholder="annotation_images" />
+          </label>
+          <label>
+            Creator
+            <input id="creator" type="text" placeholder="name or initials" />
+          </label>
+          <label>
+            Description
+            <textarea id="description" placeholder="annotation notes"></textarea>
+          </label>
+          <button id="captureBtn" type="button">Save Raw + Cropped</button>
+          <div id="captureStatus" class="status">Ready</div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Last Capture</h2>
+        <pre id="lastCapture">{}</pre>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const els = {
+      apiBase: document.getElementById("apiBase"),
+      camera: document.getElementById("camera"),
+      connectBtn: document.getElementById("connectBtn"),
+      refreshBtn: document.getElementById("refreshBtn"),
+      captureBtn: document.getElementById("captureBtn"),
+      storeDirectory: document.getElementById("storeDirectory"),
+      creator: document.getElementById("creator"),
+      description: document.getElementById("description"),
+      streamStatus: document.getElementById("streamStatus"),
+      captureStatus: document.getElementById("captureStatus"),
+      lastCapture: document.getElementById("lastCapture")
+    };
+
+    function inferApiBase() {
+      const params = new URLSearchParams(window.location.search);
+      const explicit = params.get("api");
+      if (explicit) return explicit.replace(/\/+$/, "");
+      if (window.location.origin && window.location.origin !== "null" && /^https?:/i.test(window.location.origin)) {
+        return `${window.location.origin}/api`;
+      }
+      return "http://localhost:8000/api";
+    }
+
+    function apiBase() {
+      return (els.apiBase.value.trim() || inferApiBase()).replace(/\/+$/, "");
+    }
+
+    function setStatus(el, text, kind = "") {
+      el.textContent = text;
+      el.className = `status ${kind}`.trim();
+    }
+
+    function persistInputs() {
+      localStorage.setItem("hk_annotation_api", els.apiBase.value.trim());
+      localStorage.setItem("hk_annotation_store_directory", els.storeDirectory.value.trim());
+      localStorage.setItem("hk_annotation_creator", els.creator.value.trim());
+      localStorage.setItem("hk_annotation_description", els.description.value);
+    }
+
+    function loadInputs() {
+      els.apiBase.value = localStorage.getItem("hk_annotation_api") || inferApiBase();
+      els.storeDirectory.value = localStorage.getItem("hk_annotation_store_directory") || "annotation_images";
+      els.creator.value = localStorage.getItem("hk_annotation_creator") || "";
+      els.description.value = localStorage.getItem("hk_annotation_description") || "";
+    }
+
+    function connectStream() {
+      persistInputs();
+      const src = `${apiBase()}/frame/current?t=${Date.now()}`;
+      els.camera.src = src;
+      setStatus(els.streamStatus, `Connected: ${src}`, "ok");
+    }
+
+    async function capture() {
+      const storeDirectory = els.storeDirectory.value.trim();
+      const creator = els.creator.value.trim();
+      const description = els.description.value.trim();
+
+      if (!storeDirectory) {
+        setStatus(els.captureStatus, "Store directory is required.", "error");
+        return;
+      }
+      if (!creator) {
+        setStatus(els.captureStatus, "Creator is required.", "error");
+        return;
+      }
+
+      persistInputs();
+      els.captureBtn.disabled = true;
+      setStatus(els.captureStatus, "Saving...", "warn");
+
+      try {
+        const response = await fetch(`${apiBase()}/annotation/capture`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            store_directory: storeDirectory,
+            creator,
+            description
+          })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || `HTTP ${response.status}`);
+        }
+        els.lastCapture.textContent = JSON.stringify(data, null, 2);
+        setStatus(els.captureStatus, `Saved frame ${data.metadata.frame_index}`, "ok");
+      } catch (error) {
+        setStatus(els.captureStatus, error.message || String(error), "error");
+      } finally {
+        els.captureBtn.disabled = false;
+      }
+    }
+
+    [els.apiBase, els.storeDirectory, els.creator, els.description].forEach((el) => {
+      el.addEventListener("input", persistInputs);
+    });
+    els.connectBtn.addEventListener("click", connectStream);
+    els.refreshBtn.addEventListener("click", connectStream);
+    els.captureBtn.addEventListener("click", capture);
+
+    loadInputs();
+    connectStream();
+  </script>
+</body>
+</html>

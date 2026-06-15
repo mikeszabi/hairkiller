@@ -49,13 +49,13 @@ class GalvoInterface:
 
     def move_direction(self, direction: str, step: int = 25) -> Tuple[int, int]:
         x, y = self.get_position()
-        if direction == "down":
+        if direction == "up":
             y -= step
-        elif direction == "up":
+        elif direction == "down":
             y += step
-        elif direction == "right":
-            x -= step
         elif direction == "left":
+            x -= step
+        elif direction == "right":
             x += step
         return self.move_2_pos(x, y)
 

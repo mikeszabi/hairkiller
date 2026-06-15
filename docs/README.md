@@ -20,6 +20,7 @@ Start here when choosing which document to use.
 - `app/hk_full_app_portrait.html`: full operator and diagnostics UI.
 - `app/hk_calibration_app_portrait.html`: calibration UI.
 - `app/hk_camera_test.html`: camera diagnostics UI.
+- `app/hk_annotation_capture.html`: raw/cropped image capture UI for annotation datasets.
 - `app/hk_full_app_check.html`: preflight/status UI.
 
 Every API endpoint works at both `/path` and `/api/path`.

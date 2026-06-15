@@ -173,6 +173,25 @@ No "Numpy is not available" error.
 source yolo_venv/bin/activate
 python backend/hk_full_app_check.py
 
+By default this check is non-invasive: it verifies device nodes and does not open
+new serial or camera connections. When the backend service is already running,
+use the status UI or:
+
+```bash
+curl http://127.0.0.1:8000/api/diagnostics/full_app_check
+```
+
+Only when the backend service is stopped and you explicitly want a direct
+hardware handshake/frame test:
+
+```bash
+python backend/hk_full_app_check.py --allow-hardware-open
+```
+
+The backend retries camera initialization during service startup until the camera
+connects. The retry interval defaults to `2.0` seconds and can be changed with
+`HK_CAMERA_STARTUP_RETRY_INTERVAL`.
+
 ### 🔥 Full Hair Removal Control App (`hk_full_app`)
 
 Complete hair removal system with laser firing, detection, and automated galvo sequencing:

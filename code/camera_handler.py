@@ -257,6 +257,15 @@ class UVCInterface:
         cropped = self.crop_frame(frame, self.crop_x, self.crop_y, self.crop_w, self.crop_h)
         return cropped, idx, ts
 
+    def read_raw_and_cropped_with_meta(self):
+        with self._lock:
+            if self._raw_frame is None:
+                return None, None, None, None
+            frame, idx, ts = self._raw_frame
+            raw = frame.copy()
+        cropped = self.crop_frame(raw, self.crop_x, self.crop_y, self.crop_w, self.crop_h).copy()
+        return raw, cropped, idx, ts
+
     def crop_frame(self, frame, x, y, w, h):
         """Crop a frame to the specified rectangle."""
         return frame[y : y + h, x : x + w]

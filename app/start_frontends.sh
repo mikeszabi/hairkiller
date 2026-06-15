@@ -92,6 +92,7 @@ Frontend URLs:
   Full app portrait:        $(frontend_url "hk_full_app_portrait.html")
   Calibration app portrait: $(frontend_url "hk_calibration_app_portrait.html")
   Camera test:              $(frontend_url "hk_camera_test.html")
+  Annotation capture:       $(frontend_url "hk_annotation_capture.html")
   Status check:             $(frontend_url "hk_full_app_check.html")
 
 Press Ctrl+C to stop.

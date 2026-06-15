@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+from datetime import datetime
 
 sys.path.append(str(Path(__file__).parent.parent))
 sys.path.append(str(Path(__file__).parent.parent / "code"))
@@ -76,12 +77,21 @@ def _close_runtime_resources() -> None:
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    global _shutdown
+    global _shutdown, _camera_startup_retry_thread
     _shutdown = False
+    if _uvc is None:
+        _camera_startup_retry_thread = threading.Thread(
+            target=_startup_camera_retry_worker,
+            name="camera-startup-retry",
+            daemon=True,
+        )
+        _camera_startup_retry_thread.start()
     try:
         yield
     finally:
         _shutdown = True
+        if _camera_startup_retry_thread is not None:
+            _camera_startup_retry_thread.join(timeout=1.0)
         _close_runtime_resources()
 
 
@@ -100,8 +110,8 @@ app.add_middleware(
 _uvc = None
 _camera_error = None
 _camera_lock = threading.Lock()
-_last_camera_open_attempt = 0.0
-_camera_retry_interval_s = float(os.getenv("HK_CAMERA_RETRY_INTERVAL", "2.0"))
+_camera_startup_retry_thread = None
+_camera_startup_retry_interval_s = float(os.getenv("HK_CAMERA_STARTUP_RETRY_INTERVAL", "2.0"))
 try:
     _uvc = UVCInterface()
     print("[CAMERA] Interface initialized", flush=True)
@@ -205,18 +215,17 @@ def _encode_jpeg(frame, quality: int = 70) -> bytes:
 
 
 def _camera_ready() -> bool:
-    return _ensure_camera() is not None
+    return _uvc is not None
 
 
 def _ensure_camera(force: bool = False):
-    """Retry camera initialization after backend startup races or USB hiccups."""
-    global _uvc, _camera_error, _last_camera_open_attempt
+    """Return the current camera handle; only force=True opens a new one."""
+    global _uvc, _camera_error
 
     if _uvc is not None:
         return _uvc
 
-    now = time.monotonic()
-    if not force and (now - _last_camera_open_attempt) < _camera_retry_interval_s:
+    if not force:
         return None
 
     if not _camera_lock.acquire(blocking=False):
@@ -226,22 +235,26 @@ def _ensure_camera(force: bool = False):
         if _uvc is not None:
             return _uvc
 
-        now = time.monotonic()
-        if not force and (now - _last_camera_open_attempt) < _camera_retry_interval_s:
-            return None
-        _last_camera_open_attempt = now
-
         try:
             _uvc = UVCInterface()
             _camera_error = None
-            print("[CAMERA] Interface initialized after retry", flush=True)
+            print("[CAMERA] Interface initialized", flush=True)
         except Exception as exc:
             _camera_error = str(exc)
-            logging.warning("Camera initialization retry failed: %s", exc)
+            logging.warning("Camera initialization attempt failed: %s", exc)
             _uvc = None
         return _uvc
     finally:
         _camera_lock.release()
+
+
+def _startup_camera_retry_worker() -> None:
+    """Retry camera initialization during startup until the first connection succeeds."""
+    while not _shutdown and _uvc is None:
+        _ensure_camera(force=True)
+        if _uvc is not None:
+            return
+        time.sleep(_camera_startup_retry_interval_s)
 
 
 def _camera_unavailable_response():
@@ -440,6 +453,12 @@ class LaserSettingsRequest(BaseModel):
     p1064: int
     pulse_ms: int
     reload_targets: bool = True
+
+
+class AnnotationCaptureRequest(BaseModel):
+    store_directory: str
+    creator: str
+    description: str = ""
 
 
 def _response_text(response) -> str:
@@ -818,6 +837,11 @@ def treatment_app_portrait_page():
     return FileResponse(APP_DIR / "hk_treatment_app_portrait.html")
 
 
+@app.get("/hk_annotation_capture.html")
+def annotation_capture_page():
+    return FileResponse(APP_DIR / "hk_annotation_capture.html")
+
+
 def _parse_preflight_output(output: str) -> list[dict]:
     checks = []
     for line in output.splitlines():
@@ -904,7 +928,7 @@ def run_full_app_check(
 @app.get("/health")
 def health():
     frame, idx, captured_ts = (None, None, None)
-    uvc = _ensure_camera()
+    uvc = _uvc
     if uvc is not None:
         frame, idx, captured_ts = uvc.read_with_meta()
     ok = frame is not None
@@ -920,6 +944,102 @@ def health():
         "homography_loaded": _homography is not None,
         "last_frame_index": idx,
         "frame_age_ms": None if captured_ts is None else (time.perf_counter() - captured_ts) * 1000.0,
+    }
+
+
+@app.post("/camera/reconnect")
+def reconnect_camera():
+    uvc = _ensure_camera(force=True)
+    if uvc is None:
+        return _camera_unavailable_response()
+    return {"ok": True, "camera_ready": True, "settings": uvc.get_settings()}
+
+
+def _annotation_store_path(store_directory: str) -> Path:
+    path = Path(store_directory).expanduser()
+    if not path.is_absolute():
+        path = ROOT / path
+    return path
+
+
+def _safe_filename_token(value: str, fallback: str) -> str:
+    token = re.sub(r"[^A-Za-z0-9_.-]+", "_", value.strip()).strip("._")
+    return token[:80] or fallback
+
+
+@app.post("/annotation/capture")
+def capture_annotation_image(payload: AnnotationCaptureRequest):
+    if not payload.store_directory.strip():
+        return JSONResponse(status_code=400, content={"ok": False, "error": "Store directory is required"})
+    if not payload.creator.strip():
+        return JSONResponse(status_code=400, content={"ok": False, "error": "Creator is required"})
+
+    uvc = _ensure_camera()
+    if uvc is None:
+        return _camera_unavailable_response()
+
+    raw, cropped, idx, captured_ts = uvc.read_raw_and_cropped_with_meta()
+    if raw is None or cropped is None:
+        return JSONResponse(status_code=503, content={"ok": False, "error": "No frame available"})
+
+    store_dir = _annotation_store_path(payload.store_directory)
+    try:
+        store_dir.mkdir(parents=True, exist_ok=True)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=400,
+            content={"ok": False, "error": f"Could not create store directory: {exc}"},
+        )
+
+    captured_at = datetime.now().astimezone()
+    timestamp = captured_at.strftime("%Y%m%d_%H%M%S_%f")
+    creator_token = _safe_filename_token(payload.creator, "unknown")
+    prefix = f"{timestamp}_{creator_token}_frame_{idx}"
+
+    raw_path = store_dir / f"{prefix}_raw.jpg"
+    cropped_path = store_dir / f"{prefix}_cropped.jpg"
+    metadata_path = store_dir / f"{prefix}_metadata.json"
+
+    raw_ok = cv2.imwrite(str(raw_path), raw)
+    cropped_ok = cv2.imwrite(str(cropped_path), cropped)
+    if not raw_ok or not cropped_ok:
+        return JSONResponse(
+            status_code=500,
+            content={"ok": False, "error": "Failed to write one or more image files"},
+        )
+
+    metadata = {
+        "captured_at": captured_at.isoformat(),
+        "creator": payload.creator,
+        "description": payload.description,
+        "frame_index": idx,
+        "frame_age_ms": None if captured_ts is None else (time.perf_counter() - captured_ts) * 1000.0,
+        "store_directory": str(store_dir),
+        "raw_image": str(raw_path),
+        "cropped_image": str(cropped_path),
+        "raw_size": {"width": int(raw.shape[1]), "height": int(raw.shape[0])},
+        "cropped_size": {"width": int(cropped.shape[1]), "height": int(cropped.shape[0])},
+        "crop": {
+            "x": int(uvc.crop_x),
+            "y": int(uvc.crop_y),
+            "width": int(uvc.crop_w),
+            "height": int(uvc.crop_h),
+        },
+    }
+
+    try:
+        with open(metadata_path, "w", encoding="utf-8") as handle:
+            json.dump(metadata, handle, indent=2)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content={"ok": False, "error": f"Images saved but metadata write failed: {exc}"},
+        )
+
+    return {
+        "ok": True,
+        "metadata": metadata,
+        "metadata_file": str(metadata_path),
     }
 
 
@@ -1871,16 +1991,7 @@ def move_to(x: int = Query(...), y: int = Query(...)):
 def move_direction(direction: str = Query(...), step: int = Query(25)):
     if _galvo is None:
         return JSONResponse(status_code=500, content={"error": "Galvo unavailable"})
-    x, y = _galvo.get_position()
-    if direction == "up":
-        y -= step
-    elif direction == "down":
-        y += step
-    elif direction == "left":
-        x -= step
-    elif direction == "right":
-        x += step
-    newpos = _galvo.move_2_pos(x, y)
+    newpos = _galvo.move_direction(direction, step)
     return {"new_position": newpos}
 
 
