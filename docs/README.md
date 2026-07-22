@@ -7,6 +7,7 @@ Start here when choosing which document to use.
 - `RESTAPI_definition.ini`: current endpoint catalog for `backend/hk_backend_app.py`, grouped by subsystem and frontend workflow.
 - `hk_backend_app_api.md`: consolidated backend overview, frontend descriptions, treatment-only UI behavior, cleanup/emergency stop behavior, and performance notes.
 - `hk_full_app_api.md`: detailed full-app and legacy workflow notes. It covers the route families still used by the full portrait app and lower-level tools.
+- `hk_calibration_annotation_guide_hu.md`: rovid magyar felhasznaloi guide a Calibration Portrait apphoz es annotacios kepgyujteshez.
 
 ## Firmware / Serial Docs
 
