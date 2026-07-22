@@ -12,6 +12,7 @@ Start here when choosing which document to use.
 
 - `stm_command_reference_from_code.xlsx`: command reference generated from the firmware command metadata used by `code/serial_commands.py`.
 - `README_serial.md`: older serial protocol notes and hardware testing context. Prefer the generated command catalog in the backend for current command names when they differ.
+- `jetson_troubleshooting.md`: Jetson troubleshooting runbook with USB SSH, camera, microcontroller, services, backend/frontend, and log collection commands.
 
 ## Current Frontends
 

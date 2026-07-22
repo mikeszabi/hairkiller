@@ -70,18 +70,28 @@ def _build_payload(user_input: str) -> str:
     """Return the outbound payload.
 
     If the first token matches a known command, build it with comma-separated
-    params; otherwise send the line verbatim so manual/experimental commands
-    still work.
+    params. Also accept command names typed with spaces instead of underscores,
+    such as ``APP PING`` or ``TARGET SET POS 1500 2000``.
+
+    Unknown lines are sent verbatim so manual/experimental commands still work.
     """
     if not user_input:
         return ""
 
     parts = user_input.split()
-    cmd_name = parts[0].upper()
+    cmd_name = ""
+    param_parts: list[str] = []
 
-    if cmd_name in COMMANDS:
+    for token_count in range(len(parts), 0, -1):
+        candidate = "_".join(parts[:token_count]).upper()
+        if candidate in COMMANDS:
+            cmd_name = candidate
+            param_parts = parts[token_count:]
+            break
+
+    if cmd_name:
         # Allow either space or comma separated params after the command name.
-        param_str = " ".join(parts[1:])
+        param_str = " ".join(param_parts)
         if param_str:
             raw_params = [p for p in param_str.replace(",", " ").split() if p]
             return build_command(cmd_name, *raw_params)
