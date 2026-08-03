@@ -29,6 +29,7 @@ class TargetInterface:
         channel_provider: Optional[Callable[[], Tuple[int, int, int]]] = None,
     ):
         self.dev = dev
+        self._owns_dev = dev is None
         if self.dev is None:
             kwargs = {}
             if timeout_s is not None:
@@ -109,6 +110,8 @@ class TargetInterface:
         return len(self.targets)
 
     def close(self):
+        if not self._owns_dev:
+            return
         try:
             self.dev.close()
         except Exception:

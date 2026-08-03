@@ -22,9 +22,7 @@ from pydantic import BaseModel
 from camera_handler import UVCInterface
 from detection_handler import ObjectDetector
 from detection_utils import detect_red_dot, remove_overlapping_boxes, get_box_centers
-from galvo_handler import GalvoInterface
-from laser_handler import LaserInterface
-from vacuum_handler import VacuumInterface
+from microcontroller_handler import MicrocontrollerInterface
 from serial_commands import COMMANDS, response_data_tokens
 from target_handler import TargetInterface
 from api_prefix import install_api_prefix
@@ -42,15 +40,9 @@ ROOT = Path(__file__).resolve().parent.parent
 APP_DIR = ROOT / "app"
 
 # ==================== FastAPI App ====================
-_galvo = None
+_galvo = None  # initialized once the shared laser serial device is available
 _galvo_error = None
-try:
-    _galvo = GalvoInterface(debug=False)
-    print("[GALVO] Interface initialized", flush=True)
-except Exception as e:
-    _galvo_error = str(e)
-    print(f"[GALVO] Failed to initialize: {e}", flush=True)
-
+_microcontroller = None  # sole owner of the backend's serial connection
 _laser = None  # initialized on startup
 _target = None  # initialized once laser is available
 _vacuum = None  # initialized once laser serial device is available
@@ -66,6 +58,7 @@ def _close_runtime_resources() -> None:
         ("target", _target),
         ("laser", _laser),
         ("galvo", _galvo),
+        ("microcontroller", _microcontroller),
     ):
         close = getattr(resource, "release", None) or getattr(resource, "close", None)
         if close is None:
@@ -382,17 +375,23 @@ try:
 except Exception as e:
     print(f"[HOMOGRAPHY] Failed: {e}", flush=True)
 
-# Initialize laser interface
+# Open the controller once and inject its shared connection into every handler.
 try:
-    _laser = LaserInterface()
-    _target = TargetInterface(dev=_laser.dev, channel_provider=_laser.get_channel_power_triplet)
-    _vacuum = VacuumInterface(dev=_laser.dev)
+    _microcontroller = MicrocontrollerInterface(debug=False)
+    _laser = _microcontroller.laser
+    _target = _microcontroller.target
+    _vacuum = _microcontroller.vacuum
+    _galvo = _microcontroller.galvo
     print("[LASER] Interface initialized", flush=True)
+    print("[GALVO] Interface initialized", flush=True)
 except Exception as e:
     print(f"[LASER] Failed to initialize: {e}", flush=True)
+    _galvo_error = str(e)
+    _microcontroller = None
     _laser = None
     _target = None
     _vacuum = None
+    _galvo = None
 
 
 def _background_inference_worker():

@@ -17,12 +17,16 @@ class GalvoInterface:
     """Minimal galvo control surface used by the apps."""
 
     def __init__(self, port: str = DEFAULT_PORT, baud: int = DEFAULT_BAUD,
-                 timeout_s: Optional[float] = None, debug: bool = False):
-        kwargs = {}
-        if timeout_s is not None:
-            kwargs["timeout_s"] = timeout_s
-        self.dev = SerialDevice(port=port, baud=baud, debug=debug, **kwargs)
-        self.dev.open()
+                 timeout_s: Optional[float] = None, debug: bool = False,
+                 dev: Optional[SerialDevice] = None):
+        self.dev = dev
+        self._owns_dev = dev is None
+        if self.dev is None:
+            kwargs = {}
+            if timeout_s is not None:
+                kwargs["timeout_s"] = timeout_s
+            self.dev = SerialDevice(port=port, baud=baud, debug=debug, **kwargs)
+            self.dev.open()
         self._position_x = 3000
         self._position_y = 3000
         self._move_internal(self._position_x, self._position_y)
@@ -38,7 +42,8 @@ class GalvoInterface:
         self._position_x, self._position_y = x, y
 
     def close(self):
-        self.dev.close()
+        if self._owns_dev:
+            self.dev.close()
 
     def get_position(self) -> Tuple[int, int]:
         return self._position_x, self._position_y

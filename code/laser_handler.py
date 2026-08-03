@@ -141,6 +141,7 @@ class LaserInterface:
     baud: int = DEFAULT_BAUD
     timeout_s: Optional[float] = None
     debug: bool = False
+    dev: Optional[SerialDevice] = None
 
     # Internal state for power channels
     channel_power: List[int] = field(default_factory=lambda: [0, 0, 0])  # order: 808, 980, 1064
@@ -148,16 +149,18 @@ class LaserInterface:
     pending_channel_power: Optional[Tuple[int, int, int]] = None
 
     def __post_init__(self) -> None:
-        kwargs = {}
-        if self.timeout_s is not None:
-            kwargs["timeout_s"] = self.timeout_s
-        self.dev = SerialDevice(
-            port=self.port,
-            baud=self.baud,
-            debug=self.debug,
-            **kwargs,
-        )
-        self.dev.open()
+        self._owns_dev = self.dev is None
+        if self.dev is None:
+            kwargs = {}
+            if self.timeout_s is not None:
+                kwargs["timeout_s"] = self.timeout_s
+            self.dev = SerialDevice(
+                port=self.port,
+                baud=self.baud,
+                debug=self.debug,
+                **kwargs,
+            )
+            self.dev.open()
 
     # --------------- low-level helpers -----------------
     def _send_cmd(self, command_name: str, *params, expect_prefix: Optional[str] = None):
@@ -402,7 +405,8 @@ class LaserInterface:
             return {"raw": resp, "values": None}
 
     def close(self):
-        self.dev.close()
+        if self._owns_dev:
+            self.dev.close()
 
     def get_channel_power_triplet(self) -> Tuple[int, int, int]:
         """Return (808, 980, 1064) powers with inactive channels zeroed."""
