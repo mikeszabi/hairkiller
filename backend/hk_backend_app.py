@@ -1,4 +1,5 @@
 import sys
+import asyncio
 from pathlib import Path
 from datetime import datetime
 
@@ -7,6 +8,7 @@ sys.path.append(str(Path(__file__).parent.parent / "code"))
 
 from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI, Query, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import time
@@ -151,6 +153,16 @@ _treatment_last_error = None
 _treatment_last_result = None
 _treatment_manual_remaining = 0
 _treatment_auto_vacuum_cycle_done = False
+
+# Shared state synchronization. Every successful mutating request publishes one
+# authoritative snapshot to all SSE clients. The condition avoids per-client
+# hardware polling: the request that changed state performs the refresh once.
+_state_revision = 0
+_state_updated_at = datetime.now().astimezone().isoformat()
+_state_snapshot_cache = None
+_state_condition = threading.Condition()
+_state_operation_lock = threading.RLock()
+_mutation_request_lock = asyncio.Lock()
 
 # Background inference optimization
 _inference_cache = None
@@ -512,6 +524,8 @@ def _clean_microcontroller_start_state(source: str = "startup") -> dict:
     global _show_target_points_overlay, _detected_points, _treatment_highlight_image_points
     global _treatment_running, _treatment_manual_remaining, _treatment_auto_vacuum_cycle_done
     global _treatment_last_status, _treatment_last_error, _treatment_last_result
+    global _mask_overlay_enabled, _walking, _current_target_image_pt, _last_detection_count
+    global _treatment_mode, _inference_cache
 
     responses = {}
 
@@ -528,6 +542,13 @@ def _clean_microcontroller_start_state(source: str = "startup") -> dict:
     _treatment_last_status = "IDLE"
     _treatment_last_error = None
     _treatment_last_result = None
+    _mask_overlay_enabled = False
+    _walking = False
+    _current_target_image_pt = None
+    _last_detection_count = 0
+    _treatment_mode = "semi_auto"
+    with _inference_lock:
+        _inference_cache = None
 
     if _laser is not None:
         responses["app_state_before"] = _laser.get_app_state()
@@ -536,6 +557,7 @@ def _clean_microcontroller_start_state(source: str = "startup") -> dict:
         responses["laser_clear_error"] = _laser.clear_error()
         responses["app_clear_error"] = _laser.clear_app_error()
         responses["red_dot_off"] = _laser.set_red_dot(False)
+        responses["peltier_off"] = _laser.set_peltier_cooling_enabled(False)
         responses["app_state_ready_for_target"] = _laser.get_app_state()
         deadline = time.monotonic() + 2.0
         while (
@@ -562,19 +584,43 @@ def _clean_microcontroller_start_state(source: str = "startup") -> dict:
             time.sleep(0.1)
             responses["app_state_after"] = _laser.get_app_state()
         responses["app_last_error"] = _laser.get_app_last_error()
+        responses["red_dot_enabled"] = _laser.get_red_dot_enabled()
+        responses["peltier_enabled"] = _laser.get_peltier_cooling_enabled()
+
+    if _vacuum is not None:
+        responses["vacuum_off"] = _vacuum.vacuum_off()
+        responses["vacuum_check_off"] = _vacuum.set_check_vacuum(False)
+        responses["vacuum_status"] = _vacuum.get_status()
 
     with _app_error_lock:
         _app_error_events.clear()
     with _sequence_lock:
         _sequence_events.clear()
+    with _test_lock:
+        _test_events.clear()
 
     target_error_clear = _target is None or _target_error_is_clear(responses.get("target_last_error"))
+    arm_response = None if _laser is None else _laser.get_arm_enabled()
+    vacuum_status = responses.get("vacuum_status")
+    laser_armed = None if _laser is None else _parse_firmware_bool(arm_response)
+    vacuum_off = _vacuum is None or (
+        vacuum_status.get("vacuum_on") is False
+        and vacuum_status.get("check_vacuum_enabled") is False
+    )
+    app_state_running = _laser is None or _app_state_is_running(responses.get("app_state_after"))
+    laser_disarmed = _laser is None or laser_armed is False
+    red_dot_off = _laser is None or _parse_firmware_bool(responses.get("red_dot_enabled")) is False
+    peltier_off = _laser is None or _parse_firmware_bool(responses.get("peltier_enabled")) is False
     return {
-        "ok": True,
+        "ok": app_state_running and target_error_clear and laser_disarmed and vacuum_off and red_dot_off and peltier_off,
         "source": source,
-        "app_state_running": _laser is None or _app_state_is_running(responses.get("app_state_after")),
+        "app_state_running": app_state_running,
         "target_error_clear": target_error_clear,
-        "laser_armed": False,
+        "laser_armed": laser_armed,
+        "vacuum_off": vacuum_off,
+        "vacuum": vacuum_status,
+        "red_dot_off": red_dot_off,
+        "peltier_off": peltier_off,
         "detection_enabled": False,
         "hair_detection_overlay_enabled": False,
         "responses": responses,
@@ -1346,7 +1392,8 @@ def app_reset():
 def clean_startup_state():
     if _laser is None:
         return JSONResponse(status_code=500, content={"error": "Laser unavailable"})
-    return _clean_microcontroller_start_state("frontend_startup")
+    with _state_operation_lock:
+        return _clean_microcontroller_start_state("frontend_startup")
 
 
 @app.get("/app/proc_time")
@@ -1783,7 +1830,88 @@ def _treatment_app_status() -> dict:
 @app.get("/treatment/app/status")
 def get_treatment_app_status():
     _drain_async_messages()
-    return _treatment_app_status()
+    snapshot = _treatment_app_status()
+    with _state_condition:
+        revision = _state_revision
+        updated_at = _state_updated_at
+    return {**snapshot, "revision": revision, "updated_at": updated_at}
+
+
+def _publish_state_change(source: str) -> None:
+    """Refresh hardware once and fan the resulting snapshot out to SSE clients."""
+    global _state_revision, _state_updated_at, _state_snapshot_cache
+    try:
+        _drain_async_messages()
+        snapshot = jsonable_encoder(_treatment_app_status())
+    except Exception as exc:
+        logging.exception("Unable to refresh synchronized state after %s", source)
+        snapshot = {"sync_error": str(exc)}
+
+    with _state_condition:
+        _state_revision += 1
+        _state_updated_at = datetime.now().astimezone().isoformat()
+        _state_snapshot_cache = {
+            **snapshot,
+            "revision": _state_revision,
+            "updated_at": _state_updated_at,
+            "source": source,
+        }
+        _state_condition.notify_all()
+
+
+@app.middleware("http")
+async def publish_mutating_request_state(request: Request, call_next):
+    if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return await call_next(request)
+
+    # Serialize command requests themselves, not just publication. This prevents
+    # a reset and a command from different frontends interleaving on hardware.
+    async with _mutation_request_lock:
+        response = await call_next(request)
+        if response.status_code < 400:
+            with _state_operation_lock:
+                _publish_state_change(request.url.path)
+        return response
+
+
+@app.get("/sse/state")
+def sse_state(request: Request):
+    """Push the initial authoritative state and every later successful mutation."""
+    try:
+        requested_revision = int(request.headers.get("last-event-id", "-1"))
+    except ValueError:
+        requested_revision = -1
+
+    def event_stream():
+        nonlocal requested_revision
+        while not _shutdown:
+            with _state_condition:
+                current_revision = _state_revision
+                cached = _state_snapshot_cache
+                if current_revision <= requested_revision:
+                    _state_condition.wait(timeout=15.0)
+                    current_revision = _state_revision
+                    cached = _state_snapshot_cache
+
+            if current_revision > requested_revision and cached is not None:
+                requested_revision = current_revision
+                yield f"id: {current_revision}\nevent: state\ndata: {json.dumps(cached)}\n\n"
+                continue
+
+            if requested_revision < 0:
+                # The first subscriber initializes the cache once. Later clients
+                # receive this same snapshot without issuing more hardware reads.
+                with _state_operation_lock:
+                    _publish_state_change("sse_initial")
+                continue
+
+            yield ": heartbeat\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.post("/treatment/app/mode")

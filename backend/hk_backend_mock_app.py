@@ -1,9 +1,12 @@
 import base64
+import asyncio
 import json
 import math
 import sys
+import threading
 import time
 from collections import deque
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -102,6 +105,12 @@ _camera_settings = {
 _app_error_events: deque[dict[str, Any]] = deque(maxlen=25)
 _sequence_events: deque[dict[str, Any]] = deque(maxlen=25)
 _test_events: deque[dict[str, Any]] = deque(maxlen=25)
+_state_revision = 0
+_state_updated_at = datetime.now().astimezone().isoformat()
+_state_snapshot_cache: dict[str, Any] | None = None
+_state_condition = threading.Condition()
+_state_operation_lock = threading.RLock()
+_mutation_request_lock = asyncio.Lock()
 
 _mock_image_candidates = [
     ROOT / "images" / "hair_test_live.jpg",
@@ -598,6 +607,7 @@ def clean_startup_state():
     global _hair_detection_overlay_enabled
     global _laser_active, _show_target_points_overlay, _targets, _detected_points
     global _sequence_state, _treatment_status, _treatment_manual_remaining
+    global _vacuum_on, _vacuum_check_on, _treatment_auto_vacuum_cycle_done
 
     _detection_enabled = False
     _calibration_detection_enabled = False
@@ -611,6 +621,9 @@ def clean_startup_state():
     _sequence_state = "IDLE"
     _treatment_status = "IDLE"
     _treatment_manual_remaining = 0
+    _treatment_auto_vacuum_cycle_done = False
+    _vacuum_on = False
+    _vacuum_check_on = False
     _app_error_events.clear()
     _sequence_events.clear()
 
@@ -620,11 +633,17 @@ def clean_startup_state():
         "app_state_running": True,
         "target_error_clear": True,
         "laser_armed": False,
+        "vacuum_off": True,
+        "vacuum": get_vacuum_status(),
+        "red_dot_off": True,
+        "peltier_off": True,
         "detection_enabled": False,
         "hair_detection_overlay_enabled": False,
         "responses": {
             "app_state_before": _ok("APP_GET_STATE", "RUNNING"),
             "laser_disarm": _ok_arg("LASER_SET_ARM_EN", "0"),
+            "vacuum_off": _ok_arg("APP_SET_VACUUM_EN", "0"),
+            "vacuum_check_off": _ok_arg("APP_SET_CHECK_VACUUM", "0"),
             "target_clear_error": _ok("TARGET_CLEAR_ERROR"),
             "target_clear_targets": _ok("TARGET_CLEAR_TARGETS"),
             "app_state_after": _ok("APP_GET_STATE", "RUNNING"),
@@ -680,7 +699,65 @@ def get_treatment_status():
 
 @app.get("/treatment/app/status")
 def get_treatment_app_status():
-    return _mock_treatment_status()
+    with _state_condition:
+        revision = _state_revision
+        updated_at = _state_updated_at
+    return {**_mock_treatment_status(), "revision": revision, "updated_at": updated_at}
+
+
+def _publish_state_change(source: str) -> None:
+    global _state_revision, _state_updated_at, _state_snapshot_cache
+    snapshot = _mock_treatment_status()
+    with _state_condition:
+        _state_revision += 1
+        _state_updated_at = datetime.now().astimezone().isoformat()
+        _state_snapshot_cache = {
+            **snapshot,
+            "revision": _state_revision,
+            "updated_at": _state_updated_at,
+            "source": source,
+        }
+        _state_condition.notify_all()
+
+
+@app.middleware("http")
+async def publish_mutating_request_state(request, call_next):
+    if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return await call_next(request)
+    async with _mutation_request_lock:
+        response = await call_next(request)
+        if response.status_code < 400:
+            with _state_operation_lock:
+                _publish_state_change(request.url.path)
+        return response
+
+
+@app.get("/sse/state")
+def sse_state():
+    def event_stream():
+        revision = -1
+        while True:
+            with _state_condition:
+                current = _state_revision
+                cached = _state_snapshot_cache
+                if current <= revision:
+                    _state_condition.wait(timeout=15.0)
+                    current = _state_revision
+                    cached = _state_snapshot_cache
+            if current > revision and cached is not None:
+                revision = current
+                yield f"id: {current}\nevent: state\ndata: {json.dumps(cached)}\n\n"
+            elif revision < 0:
+                with _state_operation_lock:
+                    _publish_state_change("sse_initial")
+            else:
+                yield ": heartbeat\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.post("/treatment/mode")
